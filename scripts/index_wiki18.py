@@ -1,4 +1,4 @@
-cat > scripts/index_wiki18.py << 'PY'
+
 """
 Standalone Wikipedia Corpus Indexing Script
 
@@ -433,10 +433,10 @@ def main():
         print("\n" + "=" * 60, flush=True)
         print("INDEXING COMPLETE!", flush=True)
         print("=" * 60, flush=True)
-        print(f"📁 Index location: {args.output_dir}/", flush=True)
-        print(f"📊 Total documents indexed: {len(texts)}", flush=True)
-        print(f"💾 Index size: {index.ntotal} vectors", flush=True)
-        print("\n💡 Files created:", flush=True)
+        print(f" Index location: {args.output_dir}/", flush=True)
+        print(f" Total documents indexed: {len(texts)}", flush=True)
+        print(f" Index size: {index.ntotal} vectors", flush=True)
+        print("\n Files created:", flush=True)
         print(f"   - {args.output_dir}/faiss_index.bin", flush=True)
         print(f"   - {args.output_dir}/documents.pkl", flush=True)
         print(f"   - {args.output_dir}/config.txt", flush=True)
@@ -454,4 +454,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-PY
+
