@@ -1,8 +1,15 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Local virtualenvs
+venv/
 .venv/
-__pycache__/ *.pyc
-models/
-data/
-index/
-runs/
-.vscode/
-.idea/
+rag-ue/
+
+# Logs
+logs/
+*.log
+
+# Misc
+.DS_Store
