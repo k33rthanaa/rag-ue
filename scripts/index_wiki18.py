@@ -1,6 +1,7 @@
+cat > scripts/index_wiki18.py << 'PY'
 #!/usr/bin/env python3
 """
-Index Wikipedia-2018 using Contriever with BATCH processing (no chunking).
+Index Wikipedia-2018 using Contriever with BATCH processing.
 Supports *.jsonl and *.jsonl.gz.
 
 Outputs:
@@ -15,7 +16,7 @@ import json
 import argparse
 import gzip
 
-# Make repo root importable if you later add helpers/
+# Make repo root importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import numpy as np
@@ -91,8 +92,8 @@ def iter_rows(files, max_files: int):
     """
     Yield (title, text) per line across up to max_files files (0 = all).
 
-    Uses errors='ignore' so that weird bytes / bad encodings don't crash
-    the indexer (avoids UnicodeDecodeError).
+    We read in **binary** and manually decode with errors="ignore" to avoid
+    UnicodeDecodeError on weird bytes.
     """
     count = 0
     for fp in files:
@@ -100,11 +101,14 @@ def iter_rows(files, max_files: int):
             break
 
         opener = gzip.open if fp.endswith(".gz") else open
-        mode = "rt" if fp.endswith(".gz") else "r"
 
-        # errors='ignore' avoids UTF-8 issues like byte 0x80 crashes
-        with opener(fp, mode, encoding="utf-8", errors="ignore") as f:
-            for line in f:
+        # Binary mode
+        with opener(fp, "rb") as f:
+            for raw in f:
+                # decode safely: drop invalid bytes
+                line = raw.decode("utf-8", errors="ignore")
+                if not line.strip():
+                    continue
                 try:
                     obj = json.loads(line)
                 except json.JSONDecodeError:
@@ -198,3 +202,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+PY
