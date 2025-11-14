@@ -1,3 +1,4 @@
+cat > scripts/index_wiki18.py << 'PY'
 """
 Standalone Wikipedia Corpus Indexing Script
 
@@ -7,6 +8,7 @@ Indexes PeterJinGo/wiki-18-corpus and stores embeddings in FAISS.
 - Reads JSONL(.gz) directly and is robust to corrupted / weird lines.
 - Does NOT assume a fixed JSON schema: will try the given text field,
   then fall back to other string fields, then the whole line.
+- Logs progress to stdout AND to <output-dir>/progress.log
 """
 
 import os
@@ -16,6 +18,7 @@ import gzip
 import pickle
 import argparse
 from pathlib import Path
+from datetime import datetime
 
 import torch
 import faiss
@@ -95,23 +98,23 @@ class WikiIndexer:
         self.batch_size = batch_size
         self.device = self.get_device()
 
-        print(f"🔧 Loading model '{model_name}' on device: {self.device}", flush=True)
+        print(f" Loading model '{model_name}' on device: {self.device}", flush=True)
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModel.from_pretrained(model_name).to(self.device)
         self.model.eval()
 
-        print("✅ Model loaded successfully", flush=True)
+        print(" Model loaded successfully", flush=True)
 
     def get_device(self):
         """Pick best available device (CUDA > MPS > CPU)."""
         if torch.cuda.is_available():
-            print("🚀 CUDA GPU available!", flush=True)
+            print(" CUDA GPU available!", flush=True)
             return torch.device("cuda")
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-            print("🚀 MPS (Metal) GPU acceleration available!", flush=True)
+            print(" MPS (Metal) GPU acceleration available!", flush=True)
             return torch.device("mps")
-        print("⚠️  No GPU found, using CPU", flush=True)
+        print(" No GPU found, using CPU", flush=True)
         return torch.device("cpu")
 
     def mean_pooling(self, token_embeddings, attention_mask):
@@ -173,7 +176,7 @@ class WikiIndexer:
         - If JSON ok, extract (title, text) via extract_text_title.
         - If JSON fails, treat raw decoded line as text.
         """
-        print(f"📚 Loading from file: {file_path}", flush=True)
+        print(f" Loading from file: {file_path}", flush=True)
 
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -204,7 +207,7 @@ class WikiIndexer:
                     except Exception:
                         errors += 1
                         if errors <= 5:
-                            print(f"⚠️  JSON parse error at line {i}, falling back to raw text", flush=True)
+                            print(f"  JSON parse error at line {i}, falling back to raw text", flush=True)
                         text = line
                 else:
                     text = line
@@ -221,7 +224,7 @@ class WikiIndexer:
                         flush=True,
                     )
 
-        print(f"✅ Loaded {len(entries)} valid entries (skipped {errors} JSON errors)", flush=True)
+        print(f" Loaded {len(entries)} valid entries (skipped {errors} JSON errors)", flush=True)
 
         if len(entries) == 0:
             raise ValueError("No valid entries found in the dataset file!")
@@ -235,9 +238,25 @@ class WikiIndexer:
         Index the dataset and save to FAISS.
 
         entries: list of dicts with keys ['text'] and optional ['title'].
+        Also writes incremental progress to <save_path>/progress.log.
         """
-        print(f"\n🔨 Starting indexing process...", flush=True)
-        print(f"📝 Total documents to index: {len(entries)}", flush=True)
+        os.makedirs(save_path, exist_ok=True)
+
+        progress_path = os.path.join(save_path, "progress.log")
+        # open line-buffered log file
+        prog = open(progress_path, "a", buffering=1, encoding="utf-8")
+
+        def log(msg: str):
+            ts = datetime.now().isoformat(timespec="seconds")
+            line = f"[{ts}] {msg}"
+            print(line, flush=True)
+            prog.write(line + "\n")
+
+        log("==== START INDEXING ====")
+        log(f"total_entries={len(entries)}")
+
+        print(f"\n Starting indexing process...", flush=True)
+        print(f" Total documents to index: {len(entries)}", flush=True)
 
         all_embeddings = []
         all_texts = []
@@ -245,12 +264,12 @@ class WikiIndexer:
 
         num_batches = (len(entries) + self.batch_size - 1) // self.batch_size
 
-        for i in tqdm(
-            range(0, len(entries), self.batch_size),
-            total=num_batches,
-            desc="🚀 Encoding batches",
+        for batch_idx, i in enumerate(
+            tqdm(range(0, len(entries), self.batch_size),
+                 total=num_batches,
+                 desc="🚀 Encoding batches")
         ):
-            batch = entries[i : i + self.batch_size]
+            batch = entries[i: i + self.batch_size]
 
             texts = [e.get("text", "") or "" for e in batch]
             if not any(t.strip() for t in texts):
@@ -268,26 +287,36 @@ class WikiIndexer:
                     }
                     all_metadata.append(meta)
 
+                # log every 50 batches (or first batch)
+                if batch_idx == 0 or (batch_idx + 1) % 50 == 0:
+                    docs_done = len(all_texts)
+                    log(f"batch={batch_idx+1}/{num_batches} docs_done={docs_done}")
+
             except Exception as e:
-                print(f"\n⚠️  Error processing batch starting at {i}: {e}", flush=True)
+                log(f"ERROR in batch starting at index {i}: {e}")
                 continue
 
         if not all_embeddings:
+            prog.close()
             raise ValueError("No embeddings were produced (empty dataset after cleaning?).")
 
         all_embeddings = np.vstack(all_embeddings).astype("float32")
-        print(f"\n✅ Embeddings generated: {all_embeddings.shape}", flush=True)
+        print(f"\n Embeddings generated: {all_embeddings.shape}", flush=True)
+        log(f"embeddings_shape={all_embeddings.shape}")
 
-        print("\n🏗️  Building FAISS index...", flush=True)
+        print("\n  Building FAISS index...", flush=True)
         dim = all_embeddings.shape[1]
         index = faiss.IndexFlatIP(dim)
 
         faiss.normalize_L2(all_embeddings)
         index.add(all_embeddings)
 
-        print(f"✅ FAISS index built with {index.ntotal} vectors", flush=True)
+        print(f" FAISS index built with {index.ntotal} vectors", flush=True)
+        log(f"index_size={index.ntotal} dim={dim}")
 
         self.save_index(index, all_texts, all_metadata, save_path)
+        log("==== FINISHED INDEXING ====")
+        prog.close()
         return index, all_texts, all_metadata
 
     # --------------- saving -----------------
@@ -298,19 +327,19 @@ class WikiIndexer:
 
         index_path = os.path.join(save_path, "faiss_index.bin")
         faiss.write_index(index, index_path)
-        print(f"💾 FAISS index saved: {index_path}", flush=True)
+        print(f" FAISS index saved: {index_path}", flush=True)
 
         data_path = os.path.join(save_path, "documents.pkl")
         with open(data_path, "wb") as f:
             pickle.dump({"texts": texts, "metadata": metadata}, f)
-        print(f"💾 Documents saved: {data_path}", flush=True)
+        print(f" Documents saved: {data_path}", flush=True)
 
         config_path = os.path.join(save_path, "config.txt")
         with open(config_path, "w") as f:
             f.write(f"Total documents: {len(texts)}\n")
             f.write(f"Embedding dimension: {index.d}\n")
             f.write(f"Index type: {type(index).__name__}\n")
-        print(f"💾 Config saved: {config_path}", flush=True)
+        print(f" Config saved: {config_path}", flush=True)
 
 
 # --------------- main -----------------
@@ -362,7 +391,7 @@ def main():
         sys.stdout.reconfigure(line_buffering=True)
 
     print("=" * 60, flush=True)
-    print("📇 WIKIPEDIA CORPUS INDEXER", flush=True)
+    print(" WIKIPEDIA CORPUS INDEXER", flush=True)
     print("=" * 60, flush=True)
 
     try:
@@ -372,19 +401,20 @@ def main():
         if args.file_path:
             file_path = args.file_path
         else:
-            print("🔍 Auto-detecting cached dataset file...", flush=True)
+            print(" Auto-detecting cached dataset file...", flush=True)
             file_path = indexer.find_cached_dataset()
             if not file_path:
-                print("❌ Could not find cached dataset file!", flush=True)
+                print(" Could not find cached dataset file!", flush=True)
                 print("\n💡 Please specify the file path manually:", flush=True)
                 print("   python index_wiki.py --file-path /path/to/wiki-18.jsonl.gz", flush=True)
                 return
 
-        print(f"📁 Using file: {file_path}", flush=True)
-        print(f"🤖 Model: {args.model}", flush=True)
-        print(f"📦 Batch size: {args.batch_size}", flush=True)
-        print(f"📊 Max samples: {args.max_samples or 'All'}", flush=True)
-        print(f"🔑 Preferred text field: {args.text_field}", flush=True)
+        print(f" Using file: {file_path}", flush=True)
+        print(f" Model: {args.model}", flush=True)
+        print(f" Batch size: {args.batch_size}", flush=True)
+        print(f"Max samples: {args.max_samples or 'All'}", flush=True)
+        print(f" Preferred text field: {args.text_field}", flush=True)
+        print(f" Output dir: {args.output-dir}", flush=True)
         print("=" * 60 + "\n", flush=True)
 
         # Load data from file
@@ -401,7 +431,7 @@ def main():
         )
 
         print("\n" + "=" * 60, flush=True)
-        print("✅ INDEXING COMPLETE!", flush=True)
+        print("INDEXING COMPLETE!", flush=True)
         print("=" * 60, flush=True)
         print(f"📁 Index location: {args.output_dir}/", flush=True)
         print(f"📊 Total documents indexed: {len(texts)}", flush=True)
@@ -410,12 +440,13 @@ def main():
         print(f"   - {args.output_dir}/faiss_index.bin", flush=True)
         print(f"   - {args.output_dir}/documents.pkl", flush=True)
         print(f"   - {args.output_dir}/config.txt", flush=True)
+        print(f"   - {args.output_dir}/progress.log", flush=True)
         print("=" * 60 + "\n", flush=True)
 
     except KeyboardInterrupt:
-        print("\n\n❌ Indexing interrupted by user", flush=True)
+        print("\n\n Indexing interrupted by user", flush=True)
     except Exception as e:
-        print(f"\n\n❌ ERROR: {e}", flush=True)
+        print(f"\n\n ERROR: {e}", flush=True)
         import traceback
 
         traceback.print_exc()
@@ -423,3 +454,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+PY
