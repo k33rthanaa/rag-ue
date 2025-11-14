@@ -1,41 +1,102 @@
 #!/usr/bin/env python3
-import os, sys, argparse, faiss, numpy as np, pandas as pd, torch
+"""
+Index Wikipedia-2018 using Contriever with BATCH processing (no chunking).
+Supports *.jsonl and *.jsonl.gz.
+
+Outputs:
+  <index_dir>/contriever.faiss
+  <index_dir>/meta.parquet  (title + text used)
+"""
+
+import os, sys, glob, json, argparse, gzip
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+import numpy as np
+import pandas as pd
+import faiss
 from tqdm import tqdm
-from datasets import load_dataset, IterableDataset
+
+import torch
 from transformers import AutoTokenizer, AutoModel
 
-def pick_device():
-    forced = os.environ.get("FORCE_DEVICE","").lower()
-    if forced in {"cpu","cuda","mps"}: return torch.device(forced)
-    if hasattr(torch.backends,"mps") and torch.backends.mps.is_available(): return torch.device("mps")
-    if torch.cuda.is_available(): return torch.device("cuda")
+# ---------------- device helpers ----------------
+def pick_device() -> torch.device:
+    forced = os.environ.get("FORCE_DEVICE", "").lower()
+    if forced in {"cpu","cuda","mps"}:
+        return torch.device(forced)
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
     return torch.device("cpu")
 
-def default_dtype_for(device): return torch.float16 if device.type in ("mps","cuda") else torch.float32
+def default_dtype_for(device: torch.device):
+    return torch.float16 if device.type in ("mps","cuda") else torch.float32
 
+# ---------------- encoding (batch, no chunking) ----------------
 @torch.no_grad()
 def encode_batch(tok, model, device, texts, max_length: int) -> np.ndarray:
-    if not texts: return np.zeros((0, model.config.hidden_size), dtype="float32")
-    t = tok(texts, padding=True, truncation=True, max_length=max_length, return_tensors="pt").to(device)
-    last = model(**t, return_dict=True).last_hidden_state            # [B,T,H]
-    arr  = last.detach().to("cpu").numpy()                           # -> numpy
-    pooled = arr.mean(axis=1)                                        # [B,H]
-    norms  = np.linalg.norm(pooled, axis=1, keepdims=True) + 1e-12
+    """Encode a list of raw texts in one batch; returns [B,H] float32, L2-normalized."""
+    if not texts:
+        return np.zeros((0, model.config.hidden_size), dtype="float32")
+    t = tok(
+        texts,
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="pt",
+    ).to(device)
+    out = model(**t, return_dict=True).last_hidden_state  # [B, T, H]
+    arr = out.detach().to("cpu").numpy()
+    pooled = arr.mean(axis=1)                              # [B, H]
+    norms = np.linalg.norm(pooled, axis=1, keepdims=True) + 1e-12
     return (pooled / norms).astype("float32")
 
+# ---------------- data readers ----------------
+def iter_jsonl_files(corpus_dir: str):
+    files = sorted(
+        glob.glob(os.path.join(corpus_dir, "**", "*.jsonl"), recursive=True)
+        + glob.glob(os.path.join(corpus_dir, "**", "*.jsonl.gz"), recursive=True)
+    )
+    if not files:
+        raise SystemExit(f"[error] no JSONL/JSONL.GZ found under {corpus_dir}")
+    return files
+
+def iter_rows(files, max_files: int):
+    """Yield (title, text) per line across up to max_files files (0 = all)."""
+    count = 0
+    for fp in files:
+        if max_files > 0 and count >= max_files:
+            break
+        opener = gzip.open if fp.endswith(".gz") else open
+        mode = "rt" if fp.endswith(".gz") else "r"
+        with opener(fp, mode, encoding="utf-8") as f:
+            for line in f:
+                try:
+                    obj = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                text  = (obj.get("text")  or "").strip()
+                title = (obj.get("title") or "").strip()
+                if not text:
+                    continue
+                yield title, text
+        count += 1
+
+# ---------------- main ----------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus_dir", default="data/wiki18")
     ap.add_argument("--index_dir",  default="index/contriever")
     ap.add_argument("--model_dir",  default="models/contriever")
-    ap.add_argument("--bs", type=int, default=64)
-    ap.add_argument("--max_length", type=int, default=256)
-    ap.add_argument("--limit_docs", type=int, default=0, help="0 = no limit")
+    ap.add_argument("--max_files",  type=int, default=2, help="how many files to read (0 = all)")
+    ap.add_argument("--bs",         type=int, default=64, help="batch size (docs per forward)")
+    ap.add_argument("--max_length", type=int, default=256, help="token cap per doc (truncation)")
     args = ap.parse_args()
 
     os.makedirs(args.index_dir, exist_ok=True)
-    os.environ.setdefault("TOKENIZERS_PARALLELISM","false")
-    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK","1")
+    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+    os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
     device = pick_device()
     dtype  = default_dtype_for(device)
@@ -43,48 +104,34 @@ def main():
 
     tok   = AutoTokenizer.from_pretrained(args.model_dir)
     model = AutoModel.from_pretrained(args.model_dir, dtype=dtype).to(device).eval()
+
     dim   = model.config.hidden_size
     index = faiss.IndexFlatIP(dim)
-    meta_rows = []
+    meta  = []
 
-    # ---- Hugging Face Datasets (streaming over JSONL) ----
-    # Collect all jsonl files under corpus_dir
-    data_files = {"train": [str(p) for p in sorted(__import__("glob").glob(os.path.join(args.corpus_dir, "**/*.jsonl"), recursive=True))]}
-    if not data_files["train"]:
-        raise SystemExit(f"[error] no JSONL found under {args.corpus_dir}")
+    files = iter_jsonl_files(args.corpus_dir)
 
-    ds: IterableDataset = load_dataset("json", data_files=data_files, split="train", streaming=True)
-    # Optionally limit docs (for smoke tests)
-    if args.limit_docs > 0:
-        ds = ds.take(args.limit_docs)
-
-    # Batch iteration
     batch_titles, batch_texts = [], []
     total = 0
-    with tqdm(unit="docs", desc="encode (HF Datasets, batch, no-chunk)") as pbar:
-        for row in ds:
-            text  = (row.get("text") or "").strip()
-            title = (row.get("title") or "").strip()
-            if not text: 
-                continue
-            batch_titles.append(title); batch_texts.append(text)
-            if len(batch_texts) >= args.bs:
-                vecs = encode_batch(tok, model, device, batch_texts, args.max_length)
-                if vecs.size:
-                    index.add(vecs)
-                    meta_rows.extend({"title": t, "passage": s} for t, s in zip(batch_titles, batch_texts))
-                    total += vecs.shape[0]
-                batch_titles, batch_texts = [], []
-                pbar.update(args.bs)
 
-        # flush tail
-        if batch_texts:
+    for title, text in tqdm(iter_rows(files, args.max_files), desc="encode (batch, no-chunk)"):
+        batch_titles.append(title)
+        batch_texts.append(text)
+        if len(batch_texts) >= args.bs:
             vecs = encode_batch(tok, model, device, batch_texts, args.max_length)
             if vecs.size:
-                index.add(vecs)
-                meta_rows.extend({"title": t, "passage": s} for t, s in zip(batch_titles, batch_texts))
+                index.add(vecs)  # incremental add
+                meta.extend({"title": t, "passage": s} for t, s in zip(batch_titles, batch_texts))
                 total += vecs.shape[0]
-            pbar.update(len(batch_texts))
+            batch_titles, batch_texts = [], []
+
+    # flush tail
+    if batch_texts:
+        vecs = encode_batch(tok, model, device, batch_texts, args.max_length)
+        if vecs.size:
+            index.add(vecs)
+            meta.extend({"title": t, "passage": s} for t, s in zip(batch_titles, batch_texts))
+            total += vecs.shape[0]
 
     if total == 0:
         raise SystemExit("[error] no vectors produced")
@@ -92,11 +139,11 @@ def main():
     faiss_path = os.path.join(args.index_dir, "contriever.faiss")
     meta_path  = os.path.join(args.index_dir, "meta.parquet")
     faiss.write_index(index, faiss_path)
-    pd.DataFrame(meta_rows).to_parquet(meta_path)
+    pd.DataFrame(meta).to_parquet(meta_path)
+
     print(f"[ok] wrote index -> {faiss_path}")
     print(f"[ok] wrote meta  -> {meta_path}")
     print(f"[done] ntotal={index.ntotal} dim={dim}")
 
 if __name__ == "__main__":
     main()
-
