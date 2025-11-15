@@ -5,16 +5,18 @@
 #SBATCH --time=02:30:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH -p <YOUR_PARTITION_NAME>      # ← replace this!
-# If you ever want a GPU, add something like:
-# #SBATCH --gres=gpu:1
+#SBATCH -p csedu              # <<< use the csedu partition
 
+# Base path for your workspace
 BASE=/vol/csedu-nobackup/course/I00041_informationretrieval/users/kyv
 
+# Go to repo root
 cd "$BASE/rag-ue" || { echo "cd failed"; exit 1; }
 
+# Activate venv
 source venv/bin/activate
 
+# HF / transformers env vars
 export HF_HOME="$BASE/hf"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
