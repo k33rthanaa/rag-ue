@@ -26,6 +26,13 @@ import numpy as np
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 
 # --------------- helpers for text extraction -----------------
 
