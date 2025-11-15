@@ -5,19 +5,19 @@
 #SBATCH --time=02:30:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-# If you later want GPU, uncomment and adjust:
+# If you ever want a GPU, uncomment and adjust:
 # #SBATCH --gres=gpu:1
 
-# 1) Set BASE like you do interactively
+# === 1) Set BASE exactly as in your working manual run ===
 BASE=/vol/csedu-nobackup/course/I00041_informationretrieval/users/kyv
 
-# 2) Go to your repo
+# === 2) Go to the repo root ===
 cd "$BASE/rag-ue" || { echo "cd failed"; exit 1; }
 
-# 3) Activate your virtualenv
+# === 3) Activate your virtualenv ===
 source venv/bin/activate
 
-# 4) HuggingFace env vars (same as your shell)
+# === 4) HuggingFace / threading env vars ===
 export HF_HOME="$BASE/hf"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
@@ -25,13 +25,16 @@ export HF_HUB_CACHE="$HF_HOME/hub"
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=4
 
+# Make sure logs dir exists (relative to repo root)
+mkdir -p logs
+
 echo "JobID: $SLURM_JOB_ID"
 echo "Host: $(hostname)"
 echo "Started: $(date)"
 echo "Python: $(which python)"
 python --version
 
-# 5) Run the indexer (this is your working command!)
+# === 5) Run the indexer (your known-good command) ===
 srun python -m scripts.index_wiki18 \
   --file-path "$BASE/data/wiki18/wiki-18.jsonl.gz" \
   --model "$BASE/models/contriever" \
