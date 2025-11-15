@@ -22,6 +22,7 @@ cd "$BASE/rag-ue"
 echo "PWD after cd: $(pwd)"
 ls
 
+# HF caches on /vol
 export HF_HOME="$BASE/hf"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
@@ -29,9 +30,12 @@ export HF_HUB_CACHE="$HF_HOME/hub"
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
-"$BASE/rag-ue/venv/bin/python" -V
+# >>> activate venv exactly like you do interactively <<<
+source venv/bin/activate
 
-"$BASE/rag-ue/venv/bin/python" -m scripts.index_wiki18 \
+python -V
+
+python -m scripts.index_wiki18 \
   --file-path "$BASE/data/wiki18/wiki-18.jsonl.gz" \
   --model "$BASE/models/contriever" \
   --batch-size 8 \
