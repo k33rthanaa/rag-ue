@@ -33,7 +33,7 @@ export HF_HUB_CACHE="$HF_HOME/hub"
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
-# Activate the /vol venv exactly like in your shell
+# Activate the /vol venv and run python like you do interactively
 source venv/bin/activate
 
 python -V
