@@ -1,38 +1,42 @@
-
 #!/bin/bash
-#SBATCH -J wiki18-full
-#SBATCH -p csedu
-#SBATCH -A csedui00041
-#SBATCH -c 4
+#SBATCH --job-name=wiki18-full
+#SBATCH --partition=csedu
+#SBATCH --account=csedui00041
+#SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
-#SBATCH -t 08:00:00
-#SBATCH -o logs/%x.%j.out
-#SBATCH -e logs/%x.%j.err
+#SBATCH --time=08:00:00
+# If you want a GPU, uncomment the next line:
+#SBATC H --gres=gpu:1
+#SBATCH --output=/vol/csedu-nobackup/course/I00041_informationretrieval/users/kyv/wiki18-full.%j.out
+#SBATCH --error=/vol/csedu-nobackup/course/I00041_informationretrieval/users/kyv/wiki18-full.%j.err
 
 set -euo pipefail
+set -x
 
 echo "[START] Job running on: $(hostname)"
 echo "[TIME] $(date)"
+echo "User: $(whoami)"
+echo "PWD at start: $(pwd)"
 
-# 1) activate venv
-source /scratch/$USER/venvs/rag-ue/bin/activate
+cd /scratch/kyv/proj/rag-ue
+echo "PWD after cd: $(pwd)"
+ls
 
-# 2) go to project
-cd /scratch/$USER/proj/rag-ue
-
-# 3) HF and thread env
-export HF_HOME=/scratch/$USER/hf
-export HF_DATASETS_CACHE=/scratch/$USER/hf_datasets
+# HF caches (you can also move these to /vol/csedu-nobackup if /scratch becomes a problem)
+export HF_HOME=/scratch/kyv/hf
+export HF_DATASETS_CACHE=/scratch/kyv/hf_datasets
+export TRANSFORMERS_CACHE=$HF_HOME/transformers
+export HF_HUB_CACHE=$HF_HOME/hub
 export TOKENIZERS_PARALLELISM=false
-export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
-# 4) run full indexing
-python -m scripts.index_wiki18 \
-  --file-path /scratch/$USER/data/wiki18/wiki-18.jsonl.gz \
-  --model /scratch/$USER/models/contriever \
+/scratch/kyv/venvs/rag-ue/bin/python -V
+
+/scratch/kyv/venvs/rag-ue/bin/python -m scripts.index_wiki18 \
+  --file-path /scratch/kyv/data/wiki18/wiki-18.jsonl.gz \
+  --model /scratch/kyv/models/contriever \
   --batch-size 8 \
   --text-field contents \
-  --output-dir /scratch/$USER/index/wiki_index_full
+  --output-dir /scratch/kyv/index/wiki_index_full
 
 echo "[END] Finished at $(date)"
-
