@@ -414,7 +414,7 @@ def main():
         print(f" Batch size: {args.batch_size}", flush=True)
         print(f"Max samples: {args.max_samples or 'All'}", flush=True)
         print(f" Preferred text field: {args.text_field}", flush=True)
-        print(f" Output dir: {args.output-dir}", flush=True)
+        print(f" Output dir: {args.output_dir}", flush=True)
         print("=" * 60 + "\n", flush=True)
 
         # Load data from file
