@@ -5,11 +5,12 @@
 #SBATCH -c 4
 #SBATCH --mem=16G
 #SBATCH -t 08:00:00
-#SBATCH -o logs/%x.%j.out
-#SBATCH -e logs/%x.%j.err
+#SBATCH -o /scratch/kyv/slurm-logs/wiki18-full.%j.out
+#SBATCH -e /scratch/kyv/slurm-logs/wiki18-full.%j.err
 
 set -euo pipefail
-set -x  # echo commands into the .out log
+set -x
+
 
 echo "[START] Job running on: $(hostname)"
 echo "[TIME] $(date)"
