@@ -1,3 +1,6 @@
+cd /vol/csedu-nobackup/course/I00041_informationretrieval/users/kyv/rag-ue
+
+cat > jobs/index_wiki18_full.sbatch << 'EOF'
 #!/bin/bash
 #SBATCH --job-name=wiki18-full
 #SBATCH --partition=csedu
@@ -22,7 +25,7 @@ cd "$BASE/rag-ue"
 echo "PWD after cd: $(pwd)"
 ls
 
-# HF caches on /vol
+# HuggingFace caches on /vol
 export HF_HOME="$BASE/hf"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
@@ -30,7 +33,7 @@ export HF_HUB_CACHE="$HF_HOME/hub"
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-4}
 
-# >>> activate venv exactly like you do interactively <<<
+# Activate the /vol venv exactly like in your shell
 source venv/bin/activate
 
 python -V
@@ -43,3 +46,4 @@ python -m scripts.index_wiki18 \
   --output-dir "$BASE/index/wiki_index_full"
 
 echo "[END] Finished at $(date)"
+EOF
