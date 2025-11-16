@@ -1,6 +1,5 @@
-
 """
-Standalone Wikipedia Corpus Indexing Script
+Standalone Wikipedia Corpus Indexing Script (STREAMING VERSION)
 
 Indexes PeterJinGo/wiki-18-corpus and stores embeddings in FAISS.
 
@@ -8,6 +7,7 @@ Indexes PeterJinGo/wiki-18-corpus and stores embeddings in FAISS.
 - Reads JSONL(.gz) directly and is robust to corrupted / weird lines.
 - Does NOT assume a fixed JSON schema: will try the given text field,
   then fall back to other string fields, then the whole line.
+- **STREAMING**: does NOT keep all embeddings in RAM at once.
 - Logs progress to stdout AND to <output-dir>/progress.log
 """
 
@@ -26,9 +26,7 @@ import numpy as np
 from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 
-import sys
-from pathlib import Path
-
+# Make project root importable if needed
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -67,7 +65,12 @@ def extract_text_title(obj, text_field: str):
                 break
 
         # explicit text field
-        if text_field and text_field in obj and isinstance(obj[text_field], str) and obj[text_field].strip():
+        if (
+            text_field
+            and text_field in obj
+            and isinstance(obj[text_field], str)
+            and obj[text_field].strip()
+        ):
             text = obj[text_field].strip()
         else:
             # try common keys
@@ -95,6 +98,78 @@ def extract_text_title(obj, text_field: str):
             text = str(obj[0]).strip()
 
     return title.strip(), text.strip()
+
+
+# --------------- streaming dataset iterator -----------------
+
+
+def iter_entries_from_jsonl_gz(file_path, max_samples=None, text_field="contents"):
+    """
+    Streaming version of JSONL(.gz) loader.
+
+    Yields one {"title": ..., "text": ...} dict at a time instead of
+    building a giant list in memory.
+    """
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"File not found: {file_path}")
+
+    print(f" Streaming from file: {file_path}", flush=True)
+
+    errors = 0
+    num_yielded = 0
+
+    print("📖 Reading and parsing JSONL (streaming)...", flush=True)
+
+    with gzip.open(file_path, "rb") as f:
+        for i, raw in enumerate(tqdm(f, desc="Reading lines")):
+            if max_samples is not None and num_yielded >= max_samples:
+                break
+
+            # decode safely, ignore broken bytes
+            line = raw.decode("utf-8", errors="ignore").strip()
+            if not line:
+                continue
+
+            title = ""
+            text = ""
+
+            if line[0] in "{[":
+                # looks like JSON
+                try:
+                    obj = json.loads(line)
+                    title, text = extract_text_title(obj, text_field=text_field)
+                except Exception:
+                    errors += 1
+                    if errors <= 5:
+                        print(
+                            f"  JSON parse error at line {i}, "
+                            f"falling back to raw text",
+                            flush=True,
+                        )
+                    text = line
+            else:
+                text = line
+
+            if not text:
+                continue
+
+            yield {"title": title, "text": text}
+            num_yielded += 1
+
+            if (i + 1) % 10000 == 0 and num_yielded > 0:
+                print(
+                    f"  → Seen {i+1} lines, yielded {num_yielded} valid entries, "
+                    f"{errors} JSON errors",
+                    flush=True,
+                )
+
+    print(
+        f" Streamed {num_yielded} valid entries (skipped {errors} JSON errors)",
+        flush=True,
+    )
+
+    if num_yielded == 0:
+        raise ValueError("No valid entries found in the dataset file!")
 
 
 # --------------- indexer class -----------------
@@ -173,17 +248,15 @@ class WikiIndexer:
 
         return None
 
-    # --------------- loading from jsonl.gz -----------------
+    # --------------- legacy loader (kept for debugging) -----------------
 
     def load_from_jsonl_gz(self, file_path, max_samples=None, text_field="contents"):
         """
-        Load data from gzipped JSONL file, skipping corrupted lines.
+        Legacy non-streaming loader (kept for debugging / small subsets).
 
-        - Tries JSON decoding.
-        - If JSON ok, extract (title, text) via extract_text_title.
-        - If JSON fails, treat raw decoded line as text.
+        Loads data from gzipped JSONL file into a list in memory.
         """
-        print(f" Loading from file: {file_path}", flush=True)
+        print(f" Loading from file (non-streaming): {file_path}", flush=True)
 
         if not os.path.exists(file_path):
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -214,7 +287,11 @@ class WikiIndexer:
                     except Exception:
                         errors += 1
                         if errors <= 5:
-                            print(f"  JSON parse error at line {i}, falling back to raw text", flush=True)
+                            print(
+                                f"  JSON parse error at line {i}, "
+                                f"falling back to raw text",
+                                flush=True,
+                            )
                         text = line
                 else:
                     text = line
@@ -238,19 +315,25 @@ class WikiIndexer:
 
         return entries
 
-    # --------------- indexing -----------------
+    # --------------- streaming indexing -----------------
 
-    def index_dataset(self, entries, save_path="./wiki_index"):
+    def index_dataset_streaming(
+        self,
+        file_path,
+        save_path="./wiki_index",
+        max_samples=None,
+        text_field="contents",
+    ):
         """
-        Index the dataset and save to FAISS.
+        Stream the dataset from disk, index it, and save to FAISS.
 
-        entries: list of dicts with keys ['text'] and optional ['title'].
-        Also writes incremental progress to <save_path>/progress.log.
+        This avoids storing all embeddings in RAM at once:
+        - we only keep one batch of embeddings in memory
+        - we still store all texts + metadata (for retrieval)
         """
         os.makedirs(save_path, exist_ok=True)
 
         progress_path = os.path.join(save_path, "progress.log")
-        # open line-buffered log file
         prog = open(progress_path, "a", buffering=1, encoding="utf-8")
 
         def log(msg: str):
@@ -259,72 +342,96 @@ class WikiIndexer:
             print(line, flush=True)
             prog.write(line + "\n")
 
-        log("==== START INDEXING ====")
-        log(f"total_entries={len(entries)}")
+        log("==== START INDEXING (STREAMING) ====")
 
-        print(f"\n Starting indexing process...", flush=True)
-        print(f" Total documents to index: {len(entries)}", flush=True)
-
-        all_embeddings = []
         all_texts = []
         all_metadata = []
 
-        num_batches = (len(entries) + self.batch_size - 1) // self.batch_size
+        index = None
+        batch_entries = []
+        total_seen = 0
+        total_indexed = 0
+        next_id = 0
 
-        for batch_idx, i in enumerate(
-            tqdm(range(0, len(entries), self.batch_size),
-                 total=num_batches,
-                 desc="🚀 Encoding batches")
+        print(f"\n Starting streaming indexing process...", flush=True)
+
+        # Stream entries from disk
+        for entry in iter_entries_from_jsonl_gz(
+            file_path=file_path,
+            max_samples=max_samples,
+            text_field=text_field,
         ):
-            batch = entries[i: i + self.batch_size]
+            batch_entries.append(entry)
+            total_seen += 1
 
-            texts = [e.get("text", "") or "" for e in batch]
-            if not any(t.strip() for t in texts):
-                continue
+            if len(batch_entries) >= self.batch_size:
+                index, count_added, next_id = self._encode_and_add_batch(
+                    batch_entries, index, all_texts, all_metadata, start_id=next_id
+                )
+                total_indexed += count_added
+                batch_entries = []
 
-            try:
-                embeddings = self.encode_batch(texts)
-                all_embeddings.append(embeddings)
-                all_texts.extend(texts)
+                if total_indexed % 1000 == 0:
+                    log(f"docs_indexed={total_indexed} seen={total_seen}")
 
-                for j, entry in enumerate(batch):
-                    meta = {
-                        "id": i + j,
-                        "title": entry.get("title", ""),
-                    }
-                    all_metadata.append(meta)
+        # last partial batch
+        if batch_entries:
+            index, count_added, next_id = self._encode_and_add_batch(
+                batch_entries, index, all_texts, all_metadata, start_id=next_id
+            )
+            total_indexed += count_added
+            batch_entries = []
 
-                # log every 50 batches (or first batch)
-                if batch_idx == 0 or (batch_idx + 1) % 50 == 0:
-                    docs_done = len(all_texts)
-                    log(f"batch={batch_idx+1}/{num_batches} docs_done={docs_done}")
-
-            except Exception as e:
-                log(f"ERROR in batch starting at index {i}: {e}")
-                continue
-
-        if not all_embeddings:
+        if index is None:
             prog.close()
             raise ValueError("No embeddings were produced (empty dataset after cleaning?).")
 
-        all_embeddings = np.vstack(all_embeddings).astype("float32")
-        print(f"\n Embeddings generated: {all_embeddings.shape}", flush=True)
-        log(f"embeddings_shape={all_embeddings.shape}")
+        print(f"\n Total documents indexed: {total_indexed}", flush=True)
+        log(f"docs_indexed={total_indexed} texts_stored={len(all_texts)}")
 
-        print("\n  Building FAISS index...", flush=True)
-        dim = all_embeddings.shape[1]
-        index = faiss.IndexFlatIP(dim)
-
-        faiss.normalize_L2(all_embeddings)
-        index.add(all_embeddings)
-
-        print(f" FAISS index built with {index.ntotal} vectors", flush=True)
-        log(f"index_size={index.ntotal} dim={dim}")
-
+        # Save to disk
         self.save_index(index, all_texts, all_metadata, save_path)
-        log("==== FINISHED INDEXING ====")
+        log("==== FINISHED INDEXING (STREAMING) ====")
         prog.close()
         return index, all_texts, all_metadata
+
+    def _encode_and_add_batch(
+        self,
+        batch_entries,
+        index,
+        all_texts,
+        all_metadata,
+        start_id: int,
+    ):
+        """
+        Helper: encode one batch and add to FAISS index.
+        Returns (index, count_added, next_start_id).
+        """
+        texts = [e.get("text", "") or "" for e in batch_entries]
+        if not any(t.strip() for t in texts):
+            return index, 0, start_id
+
+        embeddings = self.encode_batch(texts).astype("float32")
+        faiss.normalize_L2(embeddings)
+
+        # create index on first batch
+        if index is None:
+            dim = embeddings.shape[1]
+            index = faiss.IndexFlatIP(dim)
+            print(f"  Created FAISS IndexFlatIP(dim={dim})", flush=True)
+
+        index.add(embeddings)
+
+        # store texts + metadata (much smaller than storing all embeddings)
+        all_texts.extend(texts)
+        for j, entry in enumerate(batch_entries):
+            meta = {
+                "id": start_id + j,
+                "title": entry.get("title", ""),
+            }
+            all_metadata.append(meta)
+
+        return index, len(texts), start_id + len(texts)
 
     # --------------- saving -----------------
 
@@ -353,7 +460,7 @@ class WikiIndexer:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Index Wikipedia corpus with Contriever")
+    parser = argparse.ArgumentParser(description="Index Wikipedia corpus with Contriever (streaming)")
     parser.add_argument(
         "--file-path",
         type=str,
@@ -364,7 +471,7 @@ def main():
         "--model",
         type=str,
         default="facebook/contriever",
-        help="Model name from HuggingFace",
+        help="Model name from HuggingFace or local path",
     )
     parser.add_argument(
         "--batch-size",
@@ -393,12 +500,12 @@ def main():
 
     args = parser.parse_args()
 
-    # ensure line-buffered prints
+    # ensure line-buffered prints (Python 3.7+)
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(line_buffering=True)
 
     print("=" * 60, flush=True)
-    print(" WIKIPEDIA CORPUS INDEXER", flush=True)
+    print(" WIKIPEDIA CORPUS INDEXER (STREAMING)", flush=True)
     print("=" * 60, flush=True)
 
     try:
@@ -413,7 +520,7 @@ def main():
             if not file_path:
                 print(" Could not find cached dataset file!", flush=True)
                 print("\n💡 Please specify the file path manually:", flush=True)
-                print("   python index_wiki.py --file-path /path/to/wiki-18.jsonl.gz", flush=True)
+                print("   python -m scripts.index_wiki18 --file-path /path/to/wiki-18.jsonl.gz", flush=True)
                 return
 
         print(f" Using file: {file_path}", flush=True)
@@ -424,17 +531,12 @@ def main():
         print(f" Output dir: {args.output_dir}", flush=True)
         print("=" * 60 + "\n", flush=True)
 
-        # Load data from file
-        data_list = indexer.load_from_jsonl_gz(
+        # Stream from file and index on the fly (memory friendly)
+        index, texts, metadata = indexer.index_dataset_streaming(
             file_path=file_path,
+            save_path=args.output_dir,
             max_samples=args.max_samples,
             text_field=args.text_field,
-        )
-
-        # Index and save
-        index, texts, metadata = indexer.index_dataset(
-            entries=data_list,
-            save_path=args.output_dir,
         )
 
         print("\n" + "=" * 60, flush=True)
@@ -461,4 +563,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
