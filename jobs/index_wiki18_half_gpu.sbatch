@@ -40,4 +40,11 @@ srun "$PYTHON" -m scripts.index_wiki18 \
   --text-field contents \
   --output-dir "$BASE/index/wiki_index_half_gpu"
 
+ap.add_argument(
+    "--skip",
+    type=int,
+    default=0,
+    help="Number of initial documents/lines to skip before indexing",
+)
+
 echo "Finished: $(date)"
