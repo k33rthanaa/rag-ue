@@ -36,7 +36,7 @@ srun "$PYTHON" -m scripts.index_wiki18 \
   --file-path "$BASE/data/wiki18/wiki-18.jsonl.gz" \
   --model "$BASE/models/contriever" \
   --batch-size 32 \
-  --max-samples 10507662 \
+  --max-samples 3007662 \
   --text-field contents \
   --output-dir "$BASE/index/wiki_index_half_gpu"
 
