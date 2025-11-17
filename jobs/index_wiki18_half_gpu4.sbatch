@@ -37,8 +37,8 @@ srun "$PYTHON" -m scripts.index_wiki18 \
   --model "$BASE/models/contriever" \
   --batch-size 32 \
   --text-field contents \
-  --skip 9000000 \
-  --max-samples 3000000 \
+  --skip 6000000 \
+  --max-samples 2000000 \
   --output-dir "$BASE/index/wiki_index_chunk2"
 
 echo "Finished: $(date)"
