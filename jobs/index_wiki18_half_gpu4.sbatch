@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=wiki18_chunk2_gpu
-#SBATCH --output=logs/wiki18_chunk2_gpu_%j.out
-#SBATCH --error=logs/wiki18_chunk2_gpu_%j.err
+#SBATCH --job-name=wiki18_chunk4_gpu
+#SBATCH --output=logs/wiki18_chunk4_gpu_%j.out
+#SBATCH --error=logs/wiki18_chunk4_gpu_%j.err
 #SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
@@ -31,13 +31,13 @@ echo "Python: $PYTHON"
 echo "CUDA available?"; "$PYTHON" -c "import torch; print(torch.cuda.is_available())"
 echo "nvidia-smi:"; nvidia-smi || echo "nvidia-smi not available"
 
-# Chunk 2: resume after 3,756,000 valid docs
+# Chunk 4
 srun "$PYTHON" -m scripts.index_wiki18 \
   --file-path "$BASE/data/wiki18/wiki-18.jsonl.gz" \
   --model "$BASE/models/contriever" \
   --batch-size 32 \
   --text-field contents \
-  --skip 14000000 \
+  --skip 6000000 \
   --max-samples 2000000 \
   --output-dir "$BASE/index/wiki_index_chunk2"
 
