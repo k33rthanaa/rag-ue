@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name=wiki18_chunk2_gpu
-#SBATCH --output=logs/wiki18_chunk2_gpu_%j.out
-#SBATCH --error=logs/wiki18_chunk2_gpu_%j.err
+#SBATCH --job-name=wiki18_chunk_gpu
+#SBATCH --output=logs/wiki18_chunk_gpu_%j.out
+#SBATCH --error=logs/wiki18_chunk_gpu_%j.err
 #SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=8G
@@ -37,8 +37,8 @@ srun "$PYTHON" -m scripts.index_wiki18 \
   --model "$BASE/models/contriever" \
   --batch-size 32 \
   --text-field contents \
-  --skip 16000000 \
+  --skip 1 \
   --max-samples 2000000 \
-  --output-dir "$BASE/index/wiki_index_chunk2"
+  --output-dir "$BASE/index/wiki_index_chunk"
 
 echo "Finished: $(date)"
