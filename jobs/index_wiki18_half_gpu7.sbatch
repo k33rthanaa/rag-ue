@@ -1,4 +1,3 @@
-
 #!/bin/bash
 #SBATCH --job-name=wiki18_chunk7_gpu
 #SBATCH --output=logs/wiki18_chunk7_gpu_%j.out
