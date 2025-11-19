@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=wiki18_chunk2_gpu
+#SBATCH --job-name=wiki18_chunk3_gpu
 #SBATCH --output=logs/wiki18_chunk3_gpu_%j.out
 #SBATCH --error=logs/wiki18_chunk3_gpu_%j.err
 #SBATCH --time=10:00:00
