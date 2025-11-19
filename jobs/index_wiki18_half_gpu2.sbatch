@@ -31,7 +31,7 @@ echo "Python: $PYTHON"
 echo "CUDA available?"; "$PYTHON" -c "import torch; print(torch.cuda.is_available())"
 echo "nvidia-smi:"; nvidia-smi || echo "nvidia-smi not available"
 
-# Chunk 2: resume after 3,756,000 valid docs
+# Chunk 2
 srun "$PYTHON" -m scripts.index_wiki18 \
   --file-path "$BASE/data/wiki18/wiki-18.jsonl.gz" \
   --model "$BASE/models/contriever" \
