@@ -39,6 +39,6 @@ srun "$PYTHON" -m scripts.index_wiki18 \
   --text-field contents \
   --skip 6000000 \
   --max-samples 2000000 \
-  --output-dir "$BASE/index/wiki_index_chunk2"
+  --output-dir "$BASE/index/wiki_index_chunk4"
 
 echo "Finished: $(date)"
