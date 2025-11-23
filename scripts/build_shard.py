@@ -7,7 +7,7 @@ import faiss
 import numpy as np
 from tqdm import tqdm
 
-from utils import load_config, load_model_and_tokenizer, encode_batch, get_device
+from utils import load_config, load_model_and_tokenizer, encode_batch, get_device, setup_logging
 
 
 def get_shard_range(shard_id: int, shard_size: int):
@@ -24,15 +24,19 @@ def main(args):
     # Load config + prepare paths
     # -------------------------------
     cfg = load_config(args.config)
+    
+    # Setup logging
+    root = Path(__file__).resolve().parents[1]
+    log_dir = root / cfg.get("paths", {}).get("logs_dir", "outputs/logs")
+    logger = setup_logging(str(log_dir), cfg.get("runtime", {}).get("log_level", "INFO"))
 
     shard_size = args.shard_size or cfg["sharding"]["shard_size"]
     save_texts = cfg["sharding"]["save_texts"]
 
     dataset_path = cfg["dataset"]["local_path"]
-    dataset_path = Path(__file__).resolve().parents[1] / dataset_path
+    dataset_path = root / dataset_path
 
     # Resolve output directories
-    root = Path(__file__).resolve().parents[1]
     output_root = root / cfg["paths"]["output_root"]
     output_root.mkdir(parents=True, exist_ok=True)
 
@@ -43,11 +47,11 @@ def main(args):
     index_path = shard_dir / f"shard_{args.shard_id:04d}.index"
     meta_path = shard_dir / f"shard_{args.shard_id:04d}.meta.jsonl.gz"
 
-    print(f"\n📌 Building shard: {args.shard_id}")
-    print(f"   Docs per shard: {shard_size}")
-    print(f"   Dataset:        {dataset_path}")
-    print(f"   Output index:   {index_path}")
-    print(f"   Output meta:    {meta_path}")
+    logger.info(f"\n📌 Building shard: {args.shard_id}")
+    logger.info(f"   Docs per shard: {shard_size}")
+    logger.info(f"   Dataset:        {dataset_path}")
+    logger.info(f"   Output index:   {index_path}")
+    logger.info(f"   Output meta:    {meta_path}")
 
     # -------------------------------
     # Load model + tokenizer + device
@@ -60,7 +64,7 @@ def main(args):
     # Determine shard doc range
     # -------------------------------
     shard_start, shard_end = get_shard_range(args.shard_id, shard_size)
-    print(f"➡️ Shard covers global docs [{shard_start} .. {shard_end})\n")
+    logger.info(f"➡️ Shard covers global docs [{shard_start} .. {shard_end})\n")
 
     # -------------------------------
     # Build FAISS index (lazy init)
@@ -137,7 +141,7 @@ def main(args):
                 # Initialize index lazily
                 if index is None:
                     dim = embs.shape[1]
-                    print(f"🔧 Initializing FAISS index (dim={dim})")
+                    logger.info(f"🔧 Initializing FAISS index (dim={dim})")
                     index = faiss.IndexFlatIP(dim)
 
                 index.add(embs)
@@ -158,9 +162,9 @@ def main(args):
         raise RuntimeError("No documents indexed in this shard.")
 
     faiss.write_index(index, str(index_path))
-    print(f"\n✅ Shard {args.shard_id} completed.")
-    print(f"📦 Saved FAISS index: {index_path}")
-    print(f"📝 Saved metadata:    {meta_path}")
+    logger.info(f"\n✅ Shard {args.shard_id} completed.")
+    logger.info(f"📦 Saved FAISS index: {index_path}")
+    logger.info(f"📝 Saved metadata:    {meta_path}")
 
 
 if __name__ == "__main__":

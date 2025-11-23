@@ -5,6 +5,8 @@ from pathlib import Path
 import yaml
 from huggingface_hub import hf_hub_download
 
+from utils import setup_logging
+
 
 def load_config(config_path: str | None = None) -> dict:
     """
@@ -24,6 +26,11 @@ def load_config(config_path: str | None = None) -> dict:
 
 def main(args: argparse.Namespace) -> None:
     cfg = load_config(args.config)
+    
+    # Setup logging
+    root = Path(__file__).resolve().parents[1]
+    log_dir = root / cfg.get("paths", {}).get("logs_dir", "outputs/logs")
+    logger = setup_logging(str(log_dir), cfg.get("runtime", {}).get("log_level", "INFO"))
 
     dataset_cfg = cfg.get("dataset", {})
     repo_id = dataset_cfg.get("repo_id")
@@ -33,13 +40,12 @@ def main(args: argparse.Namespace) -> None:
         raise ValueError("Config missing dataset.repo_id or dataset.filename")
 
     # Store dataset under <project_root>/data/
-    root = Path(__file__).resolve().parents[1]
     data_dir = root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"⬇️ Downloading dataset from HF repo: {repo_id}")
-    print(f"   Filename: {filename}")
-    print(f"   Local directory: {data_dir}")
+    logger.info(f"⬇️ Downloading dataset from HF repo: {repo_id}")
+    logger.info(f"   Filename: {filename}")
+    logger.info(f"   Local directory: {data_dir}")
 
     dataset_path = hf_hub_download(
         repo_id=repo_id,
@@ -48,9 +54,9 @@ def main(args: argparse.Namespace) -> None:
         local_dir=str(data_dir),
     )
 
-    print("\n✅ Download complete.")
-    print(f"📁 Local dataset path: {dataset_path}")
-    print("\nNote: Other scripts should use this path when reading the dataset.")
+    logger.info("\n✅ Download complete.")
+    logger.info(f"📁 Local dataset path: {dataset_path}")
+    logger.info("\nNote: Other scripts should use this path when reading the dataset.")
 
 
 if __name__ == "__main__":

@@ -1,72 +1,95 @@
-#!/usr/bin/env python3
-"""
-Shared utility functions for RAG Uncertainty Estimator.
-"""
-
+import yaml
 import torch
-from transformers import AutoTokenizer, AutoModel
 import numpy as np
+from pathlib import Path
+from transformers import AutoModel, AutoTokenizer
 
+# 1) CONFIG
 
-def load_tokenizer(model_name: str):
-    """Load tokenizer for a given model."""
-    return AutoTokenizer.from_pretrained(model_name)
-
-
-def get_encoder(model_name: str, device: str = None):
+def load_config(config_path: str | None = None):
     """
-    Get encoder model for generating embeddings.
-    
-    Args:
-        model_name: Name of the model (e.g., "facebook/contriever")
-        device: Device to use ("cuda" or "cpu"). If None, auto-detect.
-    
-    Returns:
-        Encoder object with encode() method
+    Load YAML config. Defaults to configs/default.yaml
+    relative to project root.
     """
-    if device is None:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-    
+    root = Path(__file__).resolve().parents[1]
+    if config_path is None:
+        config_path = root / "configs" / "default.yaml"
+    else:
+        config_path = Path(config_path)
+
+    with open(config_path, "r", encoding="utf-8") as f:
+        cfg = yaml.safe_load(f)
+    return cfg
+
+
+# 2) DEVICE + MODEL
+
+def get_device():
+    """Return cuda if available, else cpu."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+def load_model_and_tokenizer(cfg):
+    """
+    Load tokenizer + model from config.
+    """
+    model_name = cfg.get("model_name", "facebook/contriever")
+    use_fp16 = bool(cfg.get("use_fp16", False))
+
+    device = get_device()
+
     tokenizer = AutoTokenizer.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
+
+    model_kwargs = {}
+    if use_fp16 and device.type == "cuda":
+        model_kwargs["torch_dtype"] = torch.float16
+
+    model = AutoModel.from_pretrained(model_name, **model_kwargs)
     model.to(device)
     model.eval()
-    
-    class Encoder:
-        def __init__(self, model, tokenizer, device):
-            self.model = model
-            self.tokenizer = tokenizer
-            self.device = device
-        
-        def encode(self, text: str, normalize: bool = True):
-            """Encode text into embedding vector."""
-            inputs = self.tokenizer(
-                text,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=512
-            ).to(self.device)
-            
-            with torch.no_grad():
-                outputs = self.model(**inputs)
-                # Use mean pooling for Contriever
-                embeddings = outputs.last_hidden_state.mean(dim=1).squeeze()
-            
-            if normalize:
-                embeddings = embeddings / embeddings.norm(dim=-1, keepdim=True)
-            
-            return embeddings.cpu().numpy()
-    
-    return Encoder(model, tokenizer, device)
+
+    return tokenizer, model, device
 
 
-def load_config(config_path: str):
-    """Load YAML configuration file."""
-    import yaml
-    with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+# 3) ENCODING
 
+@torch.no_grad()
+def mean_pooling(token_embeddings, attention_mask):
+    """
+    Mean pooling over non-padding tokens.
+    token_embeddings: [B, T, H]
+    attention_mask  : [B, T]
+    """
+    mask = attention_mask.unsqueeze(-1).float()
+    masked = token_embeddings * mask
+    summed = masked.sum(dim=1)
+    counts = torch.clamp(mask.sum(dim=1), min=1e-9)
+    return summed / counts
+
+
+@torch.no_grad()
+def encode_batch(texts, tokenizer, model, device, max_length=512):
+    """
+    Encode a list of texts into a numpy array [B, H] (float32).
+    """
+    if not texts:
+        hidden = model.config.hidden_size
+        return np.empty((0, hidden), dtype=np.float32)
+
+    inputs = tokenizer(
+        texts,
+        padding=True,
+        truncation=True,
+        max_length=max_length,
+        return_tensors="pt",
+    ).to(device)
+
+    outputs = model(**inputs)
+    embeddings = mean_pooling(outputs.last_hidden_state, inputs["attention_mask"])
+    return embeddings.cpu().numpy().astype("float32")
+
+
+# 4) LOGGING
 
 def setup_logging(log_dir: str, level: str = "INFO"):
     """Setup logging configuration."""
@@ -91,4 +114,7 @@ def setup_logging(log_dir: str, level: str = "INFO"):
     )
     
     return logging.getLogger(__name__)
+
+
+
 
