@@ -1,0 +1,47 @@
+
+# Default configuration for RAG-Uncertainty-Estimator
+
+# ------------------------
+# Model & encoding settings
+# ------------------------
+model_name: "facebook/contriever"   # or "facebook/contriever-msmarco"
+batch_size: 64                      # lower if you hit OOM on GPU
+max_length: 512                     # max tokens per document
+use_fp16: true                      # try fp16 on GPU if available
+
+text_field: "contents"              # JSON key in the dataset for text
+
+# ------------------------
+# Dataset (Hugging Face)
+# ------------------------
+dataset:
+  repo_id: "PeterJinGo/wiki-18-corpus"
+  filename: "wiki-18.jsonl.gz"
+  # Local path where the downloaded file will be stored (relative to project root)
+  local_path: "data/wiki-18.jsonl.gz"
+
+# ------------------------
+# Sharding / indexing
+# ------------------------
+sharding:
+  shard_size: 2000000               # docs per shard (you can override via CLI)
+  save_texts: false                 # store raw texts per shard (larger disk usage)
+
+index:
+  normalize: true                   # L2-normalize embeddings before adding to FAISS
+  index_type: "flat_ip"             # currently only flat inner-product index
+
+# ------------------------
+# Paths for outputs & cache (relative to project root)
+# ------------------------
+paths:
+  output_root: "outputs"            # all main outputs live here
+  logs_dir: "outputs/logs"
+  hf_cache: "outputs/hf_cache"      # HF_HOME cache (set in Slurm scripts)
+
+# ------------------------
+# Runtime / misc
+# ------------------------
+runtime:
+  num_workers: 0                    # dataloader-style workers (0 = no multiprocessing)
+  progress_bar: true

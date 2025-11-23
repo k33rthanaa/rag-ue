@@ -1,0 +1,50 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Data files
+data/
+*.jsonl.gz
+*.jsonl
+
+# Outputs
+outputs/
+*.index
+*.meta.jsonl.gz
+*.texts.jsonl.gz
+
+# HuggingFace cache
+hf_cache/
+.cache/
+
+# Logs
+logs/
+*.out
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Slurm
+*.sh.o*
+*.sh.e*
+

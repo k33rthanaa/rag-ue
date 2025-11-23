@@ -1,11 +1,17 @@
-# Core ML dependencies
-torch>=2.0.0
-transformers>=4.30.0
-datasets>=2.14.0
+# Core ML libraries
+torch
+transformers>=4.44
+accelerate>=0.33
+huggingface_hub>=0.23
 
-# Vector database
-faiss-cpu>=1.7.4
+# Embedding index
+faiss-cpu
 
 # Utilities
-numpy>=1.24.0
-tqdm>=4.65.0
+tqdm
+numpy
+pyyaml
+tabulate
+
+# Optional but recommended for gzip/json reading stability
+ujson
