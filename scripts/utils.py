@@ -2,7 +2,7 @@ import yaml
 import torch
 import numpy as np
 from pathlib import Path
-from transformers import AutoModel, AutoTokenizer
+from transformers import AutoModel, AutoTokenizer,AutoModelForCausalLM
 
 # 1) CONFIG
 
@@ -29,26 +29,42 @@ def get_device():
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def load_model_and_tokenizer(cfg):
+def load_model_and_tokenizer(cfg, task_type="retriever"):
     """
     Load tokenizer + model from config.
+    task_type: "retriever" or "answering" (for retrieval or answering).
     """
-    model_name = cfg.get("model_name", "facebook/contriever")
+    if task_type == "retriever":
+        # Load Contriever model for retrieval
+        model_name = cfg.get("model_name", "facebook/contriever")  # Contriever for retrieval
+    elif task_type == "answering":
+        # Load Qwen2.5-7B-Instruct model for answering
+        model_name = cfg.get("answering_model_name", "Qwen/Qwen2.5-7B-Instruct")  # Qwen2.5 for answering
+    else:
+        raise ValueError(f"Unknown task_type: {task_type}. Use 'retriever' or 'answering'.")
+
     use_fp16 = bool(cfg.get("use_fp16", False))
 
     device = get_device()
 
+    # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_name)
 
     model_kwargs = {}
     if use_fp16 and device.type == "cuda":
         model_kwargs["torch_dtype"] = torch.float16
 
-    model = AutoModel.from_pretrained(model_name, **model_kwargs)
+    # Load the model
+    if task_type == "retriever":
+        model = AutoModel.from_pretrained(model_name, **model_kwargs)
+    else:
+        model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+
     model.to(device)
     model.eval()
 
     return tokenizer, model, device
+
 
 
 # 3) ENCODING

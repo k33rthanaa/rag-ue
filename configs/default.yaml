@@ -4,12 +4,14 @@
 # ------------------------
 # Model & encoding settings
 # ------------------------
-model_name: "facebook/contriever"   # or "facebook/contriever-msmarco"
+model_name: "scripts/models/contriever"   # or "facebook/contriever-msmarco"
 batch_size: 64                      # lower if you hit OOM on GPU
 max_length: 512                     # max tokens per document
 use_fp16: true                      # try fp16 on GPU if available
 
-text_field: "contents"              # JSON key in the dataset for text
+text_field: "contents"             # JSON key in the dataset for text
+
+answering_model_name: "scripts/models/qwen2.5-7B-instruct"
 
 # ------------------------
 # Dataset (Hugging Face)

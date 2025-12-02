@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --partition=csedu
 #SBATCH --account=csedui00041
+#SBATCH --mem=16G
 #SBATCH --gres=gpu:1
 #SBATCH --time=10:00:00
 #SBATCH --job-name=build_shard

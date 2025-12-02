@@ -48,3 +48,5 @@ Thumbs.db
 *.sh.o*
 *.sh.e*
 
+scripts/models/
+models/
