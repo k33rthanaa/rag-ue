@@ -1,0 +1,17 @@
+# Core ML libraries
+torch
+transformers>=4.44
+accelerate>=0.33
+huggingface_hub>=0.23
+
+# Embedding index
+faiss-cpu
+
+# Utilities
+tqdm
+numpy
+pyyaml
+tabulate
+
+# Optional but recommended for gzip/json reading stability
+ujson
