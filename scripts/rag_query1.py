@@ -129,57 +129,85 @@ def retrieve_documents(query, cfg, retriever_tokenizer, retriever_model, device,
     return all_results
 
 def generate_answer(query, top_docs, answering_tokenizer, answering_model, device, max_context_length=2048):
-    """Generate answer using top retrieved documents"""
-
+    """Generate biographical answer using retrieved documents"""
+    
     # Build context from top documents
     context_parts = []
     for i, doc in enumerate(top_docs, 1):
         context_parts.append(f"Document {i}: {doc['title']}\n{doc['text'][:500]}")
-
+    
     context = "\n\n".join(context_parts)
-
-    # Create prompt
-    prompt = f"""Based on the following documents, answer the question.
+    
+    prompt = f"""
+You are a factual and precise assistant that writes grounded biographical summaries.
 
 Question: {query}
 
-Documents:
+Reference Documents:
 {context}
 
-Answer:"""
+Task:
+Write a comprehensive biographical summary (150–200 words) using ONLY information
+explicitly found in the Reference Documents.
 
-    # Tokenize with proper settings
+If any required detail is missing (such as birth date, nationality, achievements, 
+career history, key life events), simply omit that detail rather than guessing.
+
+Requirements:
+- Full name (if present in the documents)
+- Nationality and profession (only if present)
+- Major achievements and career highlights (from documents)
+- Notable works or contributions (from documents)
+- Key life events (from documents)
+- Write 1–2 coherent paragraphs in complete, objective sentences.
+- DO NOT add external knowledge, speculation, or assumptions.
+
+Important:
+You MUST NOT add facts that do not appear in the Reference Documents.
+Each sentence must be verifiable from the documents.
+
+Biography:
+"""
+
+    
+    # Tokenize
     inputs = answering_tokenizer(
         prompt,
         return_tensors="pt",
         max_length=max_context_length,
         truncation=True,
-        padding=True,
         return_attention_mask=True
     ).to(device)
-
-    # Generate answer
+    
+    # Generate
     outputs = answering_model.generate(
         **inputs,
-        max_new_tokens=150,
-        num_return_sequences=1,
-        no_repeat_ngram_size=2,
+        max_new_tokens=300,      # 150-200 words ≈ 200-250 tokens
+        min_new_tokens=120,      # Ensure minimum length
+        temperature=0.2,
+        top_p=0.9,
+        do_sample=False,
+        no_repeat_ngram_size=3,
         pad_token_id=answering_tokenizer.pad_token_id,
-        eos_token_id=answering_tokenizer.eos_token_id,
-        temperature=0.7,
-        do_sample=True
+        eos_token_id=answering_tokenizer.eos_token_id
     )
-
-    # Decode answer
+    
+    # Decode
     full_response = answering_tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-    # Extract only the answer part (after "Answer:")
-    if "Answer:" in full_response:
+    
+    # Extract answer
+    if "Biography:" in full_response:
+        answer = full_response.split("Biography:")[-1].strip()
+    elif "Answer:" in full_response:
         answer = full_response.split("Answer:")[-1].strip()
     else:
-        answer = full_response
-
+        answer = full_response.strip()
+    
     return answer
+
+
+
+
 
 def main(args):
     # Load config

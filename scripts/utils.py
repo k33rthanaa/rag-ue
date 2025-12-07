@@ -2,7 +2,7 @@ import yaml
 import torch
 import numpy as np
 from pathlib import Path
-from transformers import AutoModel, AutoTokenizer,AutoModelForCausalLM
+from transformers import AutoModel, AutoTokenizer,AutoModelForCausalLM,BitsAndBytesConfig
 
 # 1) CONFIG
 
@@ -64,6 +64,72 @@ def load_model_and_tokenizer(cfg, task_type="retriever"):
     model.eval()
 
     return tokenizer, model, device
+
+def load_model_and_tokenizer2(cfg, task_type="retriever"):
+    """
+    Load tokenizer + model from config.
+    task_type: "retriever" (CPU) or "answering" (GPU with INT4)
+    """
+    if task_type == "retriever":
+        # Contriever - Always CPU
+        model_name = cfg.get("model_name", "facebook/contriever")
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        
+        use_fp16 = bool(cfg.get("use_fp16", False))
+        device = get_device()
+        
+        model_kwargs = {}
+        if use_fp16 and device.type == "cuda":
+            model_kwargs["torch_dtype"] = torch.float16
+        
+        model = AutoModel.from_pretrained(model_name, **model_kwargs)
+        model.to(device)
+        model.eval()
+        
+        return tokenizer, model, device
+        
+    elif task_type == "answering":
+        # Qwen - GPU with INT4 quantization
+        model_name = cfg.get("answering_model_name", "Qwen/Qwen2.5-7B-Instruct")
+        
+        # Check GPU availability
+        if not torch.cuda.is_available():
+            raise RuntimeError("❌ GPU not available! Qwen requires GPU for answering.")
+        
+        print(f"📂 Loading answering model: {model_name}")
+        
+        # Load tokenizer
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        
+        # Configure INT4 quantization
+        print("⚙️  Configuring INT4 quantization...")
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"
+        )
+        
+        # Set max memory limits
+        max_memory = {0: "10GB", "cpu": "30GB"}
+        
+        # Load model with INT4
+        print("🔄 Loading model with INT4 quantization (~10 minutes)...")
+        model = AutoModelForCausalLM.from_pretrained(
+            model_name,
+            quantization_config=quantization_config,
+            device_map="auto",
+            max_memory=max_memory,
+            low_cpu_mem_usage=True
+        )
+        
+        device = torch.device("cuda:0")
+        print("✅ Answering model loaded successfully with INT4!")
+        
+        return tokenizer, model, device
+    
+    else:
+        raise ValueError(f"Unknown task_type: {task_type}. Use 'retriever' or 'answering'.")
 
 
 
