@@ -12,7 +12,7 @@ ENV/
 # Data files
 data/
 *.jsonl.gz
-*.jsonl
+
 
 # Outputs
 outputs/
