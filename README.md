@@ -1,359 +1,292 @@
-# RAG-Uncertainty-Estimator
+## RAG-Uncertainty-Estimator
 
-This project aims to build a Retrieval-Augmented Generation (RAG) system with 
-Uncertainty Estimation (UE). It will use Contriever for retrieval, Qwen2.5-7B-Instruct 
-for generation, and MARS &amp; Eccentricity for UE. The goal is to improve response 
-accuracy using large-scale datasets like FactScore-Bio and LongFact-Objects.
+End-to-end pipeline for Retrieval-Augmented Generation (RAG) with Uncertainty Estimation (UE).  
+The system uses **Contriever** for retrieval, **Qwen2.5-7B-Instruct** for generation, and **SAFE + MARS-style UE** to study how uncertainty correlates with factual correctness.
 
+---
 
-## 🎯 Overview
+## 🎯 What this repo gives you
 
-This repository provides tools for:
-- **Downloading datasets** from Hugging Face
-- **Building distributed FAISS indices** by sharding large datasets
-- **Querying indices** for semantic search
-- **Scalable processing** suitable for cluster environments (Slurm)
+- **Large-scale retrieval**: build sharded FAISS indices over corpora like `wiki-18`.
+- **RAG answering**: generate answers with Qwen (local) or API-based models.
+- **SAFE scoring**: label answers with factual correctness scores.
+- **Uncertainty Estimation**:
+  - **White-box UE**: average LM NLL of the answer under a language model.
+  - **Black-box UE**: \(1 -\) MARS-style faithfulness (entailment vs retrieved docs).
+- **Correlation analysis**: compute Pearson/Spearman correlations between SAFE and UE.
 
-The system is designed to handle large-scale datasets (e.g., wiki-18 corpus with millions of documents) by splitting them into manageable shards that can be processed in parallel.
-
-## ✨ Features
-
-- **Distributed Indexing**: Process large datasets in parallel by splitting into shards
-- **Efficient Embeddings**: Uses Contriever for high-quality semantic embeddings
-- **FAISS Integration**: Fast similarity search with normalized inner-product indices
-- **Streaming Processing**: Memory-efficient processing of large JSONL.gz files
-- **Metadata Preservation**: Stores document metadata alongside embeddings for retrieval
-- **Cluster-Ready**: Includes Slurm job scripts for HPC environments
-- **Configurable**: YAML-based configuration for easy customization
+---
 
 ## 📋 Requirements
 
-- Python 3.8+
-- CUDA-capable GPU (recommended for faster encoding)
-- Sufficient disk space for dataset and indices
+- **Python**: 3.10 recommended (3.8+ should work).
+- **GPU (recommended)**:
+  - CUDA-capable GPU for Qwen2.5-7B-Instruct (INT4) and optionally MARS (RoBERTa MNLI).
+  - CPU-only is supported but much slower for generation and UE.
+- **Disk**:
+  - Dataset (e.g., `wiki-18.jsonl.gz`).
+  - Sharded FAISS indices under `outputs/`.
 
-## 🚀 Installation
+Install dependencies:
 
-1. **Clone the repository**:
-   ```bash
-   git clone <repository-url>
-   cd RAG-Uncertainty-Estimator
-   ```
-
-2. **Create a virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-   **Note**: For GPU support, you may want to install `faiss-gpu` instead of `faiss-cpu`:
-   ```bash
-   pip install faiss-gpu
-   ```
-
-## 📁 Project Structure
-
+```bash
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 ```
+
+For GPU FAISS:
+
+```bash
+pip install faiss-gpu
+```
+
+---
+
+## 📁 Project structure (simplified)
+
+```text
 RAG-Uncertainty-Estimator/
-│
-├── README.md                 # This file
-├── requirements.txt          # Python dependencies
-├── .gitignore               # Git ignore rules
-│
-├── configs/                 # Configuration files
-│   ├── default.yaml         # Main configuration
-│   ├── shard_config.yaml    # (Reserved for future use)
-│   └── model_config.yaml    # (Reserved for future use)
-│
-├── data/                    # Dataset storage (git-ignored)
-│   └── wiki-18.jsonl.gz     # Downloaded dataset
-│
-├── scripts/                 # Main Python scripts
-│   ├── download_dataset.py  # Download dataset from Hugging Face
-│   ├── build_shard.py      # Build a single shard index
-│   ├── merge_indices.py    # (Reserved for future use)
-│   ├── query_index.py      # Query a shard index interactively
-│   └── utils.py            # Shared utilities (encoding, config loading)
-│
-├── slurm/                   # Slurm job scripts for cluster execution
-│   ├── download.sh          # Download dataset job
-│   └── build_shard.sh      # Build shard job
-│
-├── outputs/                 # Generated indices and metadata (git-ignored)
-│   ├── shard_0000/
-│   │   ├── shard_0000.index           # FAISS index file
-│   │   └── shard_0000.meta.jsonl.gz   # Document metadata
-│   ├── shard_0001/
-│   ├── logs/                # Job logs
-│   └── hf_cache/            # HuggingFace model cache
-│
-└── tests/                   # Unit tests
-    └── test_encoding.py     # (Reserved for future use)
+  configs/
+    default.yaml           # Main config (models, dataset, paths, sharding)
+
+  data/
+    wiki-18.jsonl.gz       # Downloaded corpus (git-ignored)
+
+  scripts/
+    download_dataset.py    # Download HF dataset to data/
+    build_shard.py         # Build a single FAISS shard
+    query_index.py         # Interactive shard queries
+
+    utils.py               # Shared config/model/encoding utilities
+    ue_utils.py            # UE + MARS helpers
+
+    batch_rag.py           # Batch RAG answering over many queries
+    rag_query.py           # Simple local RAG query
+    rag_query_local.py     # RAG query used by UE pipeline
+    rag_query_api.py       # RAG via external API (e.g., Qwen API)
+
+    safe_with_openai.py    # SAFE scoring with OpenAI-style API
+    safe_with_qwen.py      # SAFE scoring with Qwen
+    merge_safe_labels.py   # Merge SAFE labels/checkpoints if needed
+
+    eval_ue_phase2.py      # Phase 2 UE + correlation vs SAFE
+
+  outputs/
+    shard_0000/            # FAISS index + metadata per shard
+    shard_0001/
+    ...
+    rag_answers_*.jsonl    # RAG answers (with qid/query/answer)
+    safe_scores_*.jsonl    # SAFE scores (with qid/safe_score)
+    ue_scores_*.jsonl      # Per-query UE outputs
+    ue_correlation_summary.json  # Global correlation summary
 ```
 
-## ⚙️ Configuration
+---
 
-The main configuration file is `configs/default.yaml`. Key settings:
+## ⚙️ Key configuration (`configs/default.yaml`)
 
-### Model & Encoding
-- `model_name`: Hugging Face model identifier (default: `"facebook/contriever"`)
-- `batch_size`: Batch size for encoding (default: `64`)
-- `max_length`: Maximum tokens per document (default: `512`)
-- `use_fp16`: Use half-precision for GPU (default: `true`)
+### Models
 
-### Dataset
-- `dataset.repo_id`: Hugging Face dataset repository
-- `dataset.filename`: Dataset filename
-- `dataset.local_path`: Local storage path
-- `text_field`: JSON key containing document text (default: `"contents"`)
+- **Retriever**:
+  - **`model_name`**: path or HF id, e.g. `"scripts/models/contriever"` or `"facebook/contriever"`.
+- **Generator / Answering model**:
+  - **`answering_model_name`**: path or HF id for Qwen, e.g. `"scripts/models/qwen2.5-7B-instruct"`.
 
-### Sharding
-- `sharding.shard_size`: Documents per shard (default: `2000000`)
-- `sharding.save_texts`: Whether to store raw texts (default: `false`)
+### Encoding & indexing
 
-### Index
-- `index.normalize`: L2-normalize embeddings (default: `true`)
-- `index.index_type`: FAISS index type (default: `"flat_ip"`)
+- **`batch_size`**: encoding batch size (reduce if OOM).
+- **`max_length`**: max tokens per document.
+- **`use_fp16`**: `true` to use fp16 on GPU.
+- **`sharding.shard_size`**: docs per shard.
+- **`index.normalize`**: `true` for L2-normalized embeddings (`IndexFlatIP` ≈ cosine).
 
 ### Paths
-- `paths.output_root`: Output directory (default: `"outputs"`)
-- `paths.logs_dir`: Log directory
-- `paths.hf_cache`: HuggingFace cache directory
 
-## 📖 Usage Guide
+- **`paths.output_root`**: root for all outputs (indices, logs, scores).
+- **`paths.logs_dir`**: logging directory.
+- **`paths.hf_cache`**: HF cache dir (can point into `outputs/hf_cache`).
 
-### Step 1: Download Dataset
+---
 
-Download the dataset from Hugging Face to the local `data/` directory:
+## 🚀 End-to-end workflow: RAG + SAFE + UE
+
+### 1. Download dataset
 
 ```bash
-python scripts/download_dataset.py
+python scripts/download_dataset.py \
+  --config configs/default.yaml
 ```
 
-Or with a custom config:
+This writes the corpus to the `data/` folder defined in the config (e.g. `data/wiki-18.jsonl.gz`).
+
+---
+
+### 2. Build sharded FAISS indices
+
+Build one shard (adjust `--shard_id` as needed):
+
 ```bash
-python scripts/download_dataset.py --config configs/default.yaml
+python scripts/build_shard.py --shard_id 0 --config configs/default.yaml
 ```
 
-**What it does:**
-- Downloads the dataset specified in `configs/default.yaml` from Hugging Face
-- Saves it to `data/wiki-18.jsonl.gz` (or path specified in config)
-- Uses the `huggingface_hub` library for efficient downloading
-
-### Step 2: Build Shard Indices
-
-Build FAISS indices for each shard. Each shard processes a subset of documents:
+Repeat for all shards you need:
 
 ```bash
-python scripts/build_shard.py --shard_id 0
-```
-
-**Arguments:**
-- `--shard_id` (required): Shard ID to build (0, 1, 2, ...)
-- `--shard_size` (optional): Override shard size from config
-- `--config` (optional): Path to config file (default: `configs/default.yaml`)
-
-**What it does:**
-1. Loads the encoder model (Contriever) and tokenizer
-2. Reads the dataset file and processes documents in the shard's range
-3. Encodes documents in batches using the encoder model
-4. Normalizes embeddings (if configured)
-5. Builds a FAISS index with inner-product similarity
-6. Saves:
-   - `shard_XXXX.index`: FAISS index file
-   - `shard_XXXX.meta.jsonl.gz`: Compressed metadata (title, contents, IDs)
-
-**Example: Building multiple shards**
-```bash
-# Build shard 0 (documents 0-2M)
-python scripts/build_shard.py --shard_id 0
-
-# Build shard 1 (documents 2M-4M)
 python scripts/build_shard.py --shard_id 1
-
-# Build shard 2 (documents 4M-6M)
 python scripts/build_shard.py --shard_id 2
+# ...
 ```
 
-**Shard Range Calculation:**
-- Shard 0: documents [0 × shard_size, 1 × shard_size)
-- Shard 1: documents [1 × shard_size, 2 × shard_size)
-- Shard N: documents [N × shard_size, (N+1) × shard_size)
+Each shard folder under `outputs/` contains:
+- `shard_XXXX.index` – FAISS `IndexFlatIP` over Contriever embeddings.
+- `shard_XXXX.meta.jsonl.gz` – metadata (title, contents, ids) for RAG.
 
-### Step 3: Query the Index
-
-Query a built shard index interactively:
+You can sanity-check retrieval with:
 
 ```bash
 python scripts/query_index.py --shard_id 0 --top_k 5
 ```
 
-**Arguments:**
-- `--shard_id` (required): Shard ID to query
-- `--top_k` (optional): Number of results to return (default: `5`)
-- `--config` (optional): Path to config file
+---
 
-**What it does:**
-1. Loads the FAISS index and metadata for the specified shard
-2. Loads the encoder model for query encoding
-3. Enters an interactive loop where you can:
-   - Type queries and get top-k results
-   - See similarity scores, document IDs, titles, and snippets
-   - Type `exit` or `quit` to stop
+### 3. Run RAG answering
 
-**Example session:**
-```
-Query> What is machine learning?
-[Results table with rank, score, doc ID, title, snippet]
+You can either:
 
-Query> How does neural network training work?
-[Results table...]
+- **Use local Qwen** (via `rag_query.py` / `rag_query_local.py`), or  
+- **Use an API model** (e.g. Qwen API) via `rag_query_api.py`.
 
-Query> exit
-Bye!
-```
+For batch answering over many queries (recommended for UE runs):
 
-## 🔧 Core Components
-
-### `scripts/utils.py`
-
-Shared utility functions used across scripts:
-
-- **`load_config(config_path)`**: Loads YAML configuration file
-- **`get_device()`**: Returns CUDA device if available, else CPU
-- **`load_model_and_tokenizer(cfg)`**: Loads tokenizer and model from config
-- **`mean_pooling(token_embeddings, attention_mask)`**: Mean pooling over non-padding tokens
-- **`encode_batch(texts, tokenizer, model, device, max_length)`**: Encodes a batch of texts into embeddings
-
-### `scripts/download_dataset.py`
-
-Downloads datasets from Hugging Face:
-- Reads dataset configuration from YAML
-- Uses `huggingface_hub` to download files
-- Saves to local `data/` directory
-
-### `scripts/build_shard.py`
-
-Builds a single shard index:
-- Streams through dataset file (memory-efficient)
-- Processes documents in batches
-- Encodes using Contriever model
-- Builds FAISS index with normalized embeddings
-- Saves index and metadata files
-
-### `scripts/query_index.py`
-
-Interactive query interface:
-- Loads a shard index and metadata
-- Encodes queries using the same model
-- Performs similarity search
-- Displays results in a formatted table
-
-## 🖥️ Slurm Cluster Usage
-
-For HPC environments, use the provided Slurm scripts:
-
-### Download Dataset
 ```bash
-sbatch slurm/download.sh
+python scripts/batch_rag.py \
+  --config configs/default.yaml \
+  --input_queries path/to/queries.jsonl \
+  --output_path outputs/rag_answers_...jsonl
 ```
 
-### Build Shard
+Your answers file must contain at least:
+- `qid`
+- `query`
+- `answer`
+
+This is the file you will feed into SAFE and UE.
+
+---
+
+### 4. SAFE scoring (factual correctness labels)
+
+There are two SAFE front-ends:
+
+- **`scripts/safe_with_qwen.py`** – uses Qwen as the SAFE model.
+- **`scripts/safe_with_openai.py`** – uses an OpenAI-style API as SAFE model.
+
+Example (adapt to your environment / API keys):
+
 ```bash
-sbatch slurm/build_shard.sh 0   # Build shard 0
-sbatch slurm/build_shard.sh 1   # Build shard 1
+python scripts/safe_with_qwen.py \
+  --answers_path outputs/rag_answers_...jsonl \
+  --output_path outputs/safe_scores_...jsonl
 ```
 
-**Note**: Update the `PROJECT_ROOT` path in the Slurm scripts to match your cluster setup.
+The resulting SAFE file should contain:
+- `qid`
+- `query`
+- `answer`
+- `safe_score` (in \[0, 1\] or similar scale)
 
-The scripts:
-- Set up the environment (activate venv, set HF_HOME)
-- Run the Python scripts with appropriate arguments
-- Save logs to `outputs/logs/`
+If you have multiple SAFE runs or checkpoints, you can consolidate them with:
 
-## 🔍 Understanding the Workflow
-
-### 1. Dataset Format
-
-The system expects JSONL.gz files where each line is a JSON object:
-```json
-{"id": "doc_123", "title": "Document Title", "contents": "Document text here..."}
+```bash
+python scripts/merge_safe_labels.py \
+  --input_paths outputs/safe_scores_*.jsonl \
+  --output_path outputs/safe_checkpoint.jsonl
 ```
 
-The `contents` field (or field specified by `text_field` in config) is used for encoding.
+---
 
-### 2. Sharding Strategy
+### 5. Uncertainty Estimation 
 
-Large datasets are split into shards for parallel processing:
-- Each shard processes a contiguous range of documents
-- Shards can be built independently (useful for parallel execution)
-- Each shard produces its own FAISS index
+The main UE driver is `scripts/eval_ue_phase2.py`.
 
-### 3. Embedding Process
+Run UE over a pair of (answers, SAFE) files:
 
-1. **Tokenization**: Text is tokenized using the model's tokenizer
-2. **Encoding**: Tokenized text is passed through the encoder model
-3. **Pooling**: Mean pooling over token embeddings (excluding padding)
-4. **Normalization**: L2 normalization for cosine similarity
-5. **Indexing**: Normalized embeddings are added to FAISS index
+```bash
+python scripts/eval_ue_phase2.py \
+  --answers_path outputs/rag_answers_...jsonl \
+  --safe_path outputs/safe_scores_...jsonl \
+  --config configs/default.yaml
+```
 
-### 4. Query Process
+What it does:
+- Loads retriever (Contriever) and answering model (Qwen or fallback LM).
+- For each shared `qid`:
+  - **White-box UE**: computes average negative log-likelihood of the answer under the LM, conditioned on the question.
+  - **Black-box UE**:
+    - Re-retrieves documents for the query using all FAISS shards.
+    - Computes MARS-style faithfulness using a RoBERTa MNLI model.
+    - Defines `ue_black = 1 - faithfulness`.
+- Accumulates per-query records and global correlation stats.
 
-1. **Query Encoding**: Query text is encoded using the same model
-2. **Normalization**: Query embedding is normalized (if index was normalized)
-3. **Search**: FAISS performs inner-product search (cosine similarity for normalized vectors)
-4. **Retrieval**: Top-k results are retrieved with scores
-5. **Metadata Lookup**: Document metadata is loaded from metadata file
+Outputs:
+- `outputs/ue_scores_...jsonl`:
+  - `qid`, `query`, `answer`
+  - `safe_score`
+  - `ue_white_nll`, `ue_white_num_tokens`
+  - `mars_faithfulness`, `ue_black_mars_uncertainty`
+- `outputs/ue_correlation_summary.json`:
+  - `num_examples`
+  - `pearson_white_nll`, `spearman_white_nll`
+  - `pearson_black_mars_uncertainty`, `spearman_black_mars_uncertainty`
+  - paths + model metadata
 
-## 🐛 Troubleshooting
+You can inspect `ue_correlation_summary.json` directly to see how well uncertainty tracks SAFE.
 
-### Out of Memory (OOM) Errors
+---
 
-- **Reduce batch size**: Set `batch_size: 32` or lower in `configs/default.yaml`
-- **Use CPU**: The system will fall back to CPU if CUDA is unavailable
-- **Disable FP16**: Set `use_fp16: false` if you encounter precision issues
+## 🔧 Script reference (quick)
 
-### Slow Encoding
+- **`scripts/utils.py`**:
+  - `load_config` – YAML config loader.
+  - `load_model_and_tokenizer`, `load_model_and_tokenizer2` – load Contriever/Qwen with correct devices and quantization.
+  - `encode_batch` – batched encoding with mean pooling.
 
-- **Use GPU**: Ensure CUDA is available (`torch.cuda.is_available()`)
-- **Enable FP16**: Set `use_fp16: true` for faster GPU encoding
-- **Increase batch size**: Larger batches are more efficient (if memory allows)
+- **Indexing**:
+  - `download_dataset.py` – downloads HF dataset to `data/`.
+  - `build_shard.py` – builds `IndexFlatIP` per shard from the corpus.
+  - `query_index.py` – interactive debugging for retrieval quality.
 
-### Dataset Not Found
+- **RAG**:
+  - `rag_query.py`, `rag_query_local.py` – local RAG for single queries / small batches.
+  - `rag_query_api.py` – RAG over an external API model.
+  - `batch_rag.py` – end-to-end batched answering for UE experiments.
 
-- Verify the `dataset.repo_id` and `dataset.filename` in config
-- Check Hugging Face access (some datasets require authentication)
-- Ensure the dataset repository exists and is accessible
+- **SAFE & UE**:
+  - `safe_with_openai.py`, `safe_with_qwen.py` – SAFE scoring front-ends.
+  - `merge_safe_labels.py` – merge SAFE runs / checkpoints.
+  - `eval_ue_phase2.py` – compute white-box and black-box UE and correlations.
 
-### Index/Metadata Mismatch
+---
 
-- Ensure metadata file was written correctly during indexing
-- Check that the metadata file wasn't corrupted
-- Verify that documents were processed in order
+## 🐛 Troubleshooting notes
 
-### Import Errors
+- **Slow runs / long UE time**:
+  - UE is expensive: it runs LM NLL + RoBERTa MNLI + multi-shard retrieval per query.
+  - For quick experiments, reduce the number of queries or shards, or lower `top_k_per_shard`.
 
-- Ensure all dependencies are installed: `pip install -r requirements.txt`
-- Check that you're using the correct Python version (3.8+)
-- Verify virtual environment is activated
+- **GPU vs CPU**:
+  - Qwen answering uses GPU INT4 in `load_model_and_tokenizer2`; if no GPU is found, scripts may fall back to a small CPU LM (e.g., `gpt2`) for NLL.
+  - MARS (RoBERTa MNLI) defaults to CPU but can be switched to GPU inside `MarsScorer` if desired.
+
+- **Out-of-memory**:
+  - Lower `batch_size` in `configs/default.yaml`.
+  - Disable fp16 (`use_fp16: false`) if you see stability issues.
+
+---
 
 ## 📝 Notes
 
-- **Memory Efficiency**: The system streams through dataset files, so memory usage is independent of dataset size
-- **Shard Independence**: Each shard is independent; you can build them in any order or in parallel
-- **Metadata Storage**: Metadata includes full document text (for RAG), so metadata files can be large
-- **Index Type**: Currently uses `IndexFlatIP` (exact search). For larger indices, consider `IndexIVFFlat` or `IndexHNSWFlat` (requires code modifications)
-
-## 🔮 Future Enhancements
-
-- Multi-shard querying (search across all shards)
-- Index merging functionality
-- Support for different FAISS index types (IVF, HNSW)
-- Uncertainty estimation integration (MARS, Eccentricity)
-- Generator model integration (Qwen2.5-7B-Instruct)
-
+- Shards are independent; you can build and query them in any order.
+- Metadata files store full document text for RAG, so they can be large.
+- The code currently uses exact `IndexFlatIP`; swapping to IVF/HNSW would require minor FAISS changes in `build_shard.py`.
