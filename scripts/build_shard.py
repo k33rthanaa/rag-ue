@@ -47,11 +47,11 @@ def main(args):
     index_path = shard_dir / f"shard_{args.shard_id:04d}.index"
     meta_path = shard_dir / f"shard_{args.shard_id:04d}.meta.jsonl.gz"
 
-    logger.info(f"\n📌 Building shard: {args.shard_id}")
-    logger.info(f"   Docs per shard: {shard_size}")
-    logger.info(f"   Dataset:        {dataset_path}")
-    logger.info(f"   Output index:   {index_path}")
-    logger.info(f"   Output meta:    {meta_path}")
+    logger.info(f"Building shard: {args.shard_id}")
+    logger.info(f"Docs per shard: {shard_size}")
+    logger.info(f"Dataset: {dataset_path}")
+    logger.info(f"Output index: {index_path}")
+    logger.info(f"Output meta: {meta_path}")
 
     # -------------------------------
     # Load model + tokenizer + device
@@ -64,7 +64,7 @@ def main(args):
     # Determine shard doc range
     # -------------------------------
     shard_start, shard_end = get_shard_range(args.shard_id, shard_size)
-    logger.info(f"➡️ Shard covers global docs [{shard_start} .. {shard_end})\n")
+    logger.info(f"Shard covers global docs [{shard_start} .. {shard_end})\n")
 
     # -------------------------------
     # Build FAISS index (lazy init)
@@ -141,7 +141,7 @@ def main(args):
                 # Initialize index lazily
                 if index is None:
                     dim = embs.shape[1]
-                    logger.info(f"🔧 Initializing FAISS index (dim={dim})")
+                    logger.info(f"Initializing FAISS index (dim={dim})")
                     index = faiss.IndexFlatIP(dim)
 
                 index.add(embs)
@@ -162,9 +162,9 @@ def main(args):
         raise RuntimeError("No documents indexed in this shard.")
 
     faiss.write_index(index, str(index_path))
-    logger.info(f"\n✅ Shard {args.shard_id} completed.")
-    logger.info(f"📦 Saved FAISS index: {index_path}")
-    logger.info(f"📝 Saved metadata:    {meta_path}")
+    logger.info(f"Shard {args.shard_id} completed.")
+    logger.info(f"Saved FAISS index: {index_path}")
+    logger.info(f"Saved metadata: {meta_path}")
 
 
 if __name__ == "__main__":

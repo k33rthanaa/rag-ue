@@ -43,9 +43,9 @@ def main(args: argparse.Namespace) -> None:
     data_dir = root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info(f"⬇️ Downloading dataset from HF repo: {repo_id}")
-    logger.info(f"   Filename: {filename}")
-    logger.info(f"   Local directory: {data_dir}")
+    logger.info(f"Downloading dataset from HF repo: {repo_id}")
+    logger.info(f"Filename: {filename}")
+    logger.info(f"Local directory: {data_dir}")
 
     dataset_path = hf_hub_download(
         repo_id=repo_id,
@@ -54,9 +54,9 @@ def main(args: argparse.Namespace) -> None:
         local_dir=str(data_dir),
     )
 
-    logger.info("\n✅ Download complete.")
-    logger.info(f"📁 Local dataset path: {dataset_path}")
-    logger.info("\nNote: Other scripts should use this path when reading the dataset.")
+    logger.info("Download complete.")
+    logger.info(f"Local dataset path: {dataset_path}")
+    logger.info("Other scripts should use this path when reading the dataset.")
 
 
 if __name__ == "__main__":

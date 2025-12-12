@@ -34,6 +34,9 @@ def load_model_and_tokenizer(cfg, task_type="retriever"):
     Load tokenizer + model from config.
     task_type: "retriever" or "answering" (for retrieval or answering).
     """
+    # Resolve potential local paths relative to project root
+    root = Path(__file__).resolve().parents[1]
+
     if task_type == "retriever":
         # Load Contriever model for retrieval
         model_name = cfg.get("model_name", "facebook/contriever")  # Contriever for retrieval
@@ -42,6 +45,12 @@ def load_model_and_tokenizer(cfg, task_type="retriever"):
         model_name = cfg.get("answering_model_name", "Qwen/Qwen2.5-7B-Instruct")  # Qwen2.5 for answering
     else:
         raise ValueError(f"Unknown task_type: {task_type}. Use 'retriever' or 'answering'.")
+
+    # If config provides a relative directory path (e.g. 'scripts/models/contriever'),
+    # interpret it relative to the project root so it works no matter the CWD.
+    candidate_dir = root / model_name
+    if candidate_dir.exists():
+        model_name = str(candidate_dir)
 
     use_fp16 = bool(cfg.get("use_fp16", False))
 
@@ -70,9 +79,15 @@ def load_model_and_tokenizer2(cfg, task_type="retriever"):
     Load tokenizer + model from config.
     task_type: "retriever" (CPU) or "answering" (GPU with INT4)
     """
+    # Resolve potential local paths relative to project root
+    root = Path(__file__).resolve().parents[1]
+
     if task_type == "retriever":
         # Contriever - Always CPU
         model_name = cfg.get("model_name", "facebook/contriever")
+        candidate_dir = root / model_name
+        if candidate_dir.exists():
+            model_name = str(candidate_dir)
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         
         use_fp16 = bool(cfg.get("use_fp16", False))
@@ -91,18 +106,21 @@ def load_model_and_tokenizer2(cfg, task_type="retriever"):
     elif task_type == "answering":
         # Qwen - GPU with INT4 quantization
         model_name = cfg.get("answering_model_name", "Qwen/Qwen2.5-7B-Instruct")
+        candidate_dir = root / model_name
+        if candidate_dir.exists():
+            model_name = str(candidate_dir)
         
         # Check GPU availability
         if not torch.cuda.is_available():
-            raise RuntimeError("❌ GPU not available! Qwen requires GPU for answering.")
+            raise RuntimeError("GPU not available. Qwen requires a GPU for answering.")
         
-        print(f"📂 Loading answering model: {model_name}")
+        print(f"Loading answering model: {model_name}")
         
         # Load tokenizer
         tokenizer = AutoTokenizer.from_pretrained(model_name)
         
         # Configure INT4 quantization
-        print("⚙️  Configuring INT4 quantization...")
+        print("Configuring INT4 quantization...")
         quantization_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
@@ -114,7 +132,7 @@ def load_model_and_tokenizer2(cfg, task_type="retriever"):
         max_memory = {0: "10GB", "cpu": "30GB"}
         
         # Load model with INT4
-        print("🔄 Loading model with INT4 quantization (~10 minutes)...")
+        print("Loading model with INT4 quantization (this can take several minutes)...")
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=quantization_config,
@@ -124,7 +142,7 @@ def load_model_and_tokenizer2(cfg, task_type="retriever"):
         )
         
         device = torch.device("cuda:0")
-        print("✅ Answering model loaded successfully with INT4!")
+        print("Answering model loaded successfully with INT4.")
         
         return tokenizer, model, device
     
