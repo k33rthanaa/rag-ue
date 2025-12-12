@@ -1,0 +1,10 @@
+{
+  "num_examples": 50,
+  "pearson_white_nll": -0.08410627554308957,
+  "spearman_white_nll": -0.12357142857142857,
+  "pearson_black_mars_uncertainty": 0.056724445262828826,
+  "spearman_black_mars_uncertainty": 0.01010204081632653,
+  "answers_path": "outputs\\rag_answers_api_qwen-2.5-72b-instruct.jsonl",
+  "safe_path": "outputs\\safe_scores_api_qwen-2.5-14b-instruct.jsonl",
+  "white_box_model_kind": "gpt2_cpu"
+}

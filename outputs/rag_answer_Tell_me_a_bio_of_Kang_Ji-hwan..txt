@@ -1,0 +1,27 @@
+Query: Tell me a bio of Kang Ji-hwan.
+
+Answer: Based on Document  7:
+
+Korean actor Kang Ki-hwang, born Jo Taegyu, was a musical theater performer before making his television and film debut. Some of his notable works include starring in "BeStrong, Goomsoon!" (a 04-03-25 - 6-15-31 Korean drama series), "CapitalScandal" (an 8-7-49 -11-9-50 period piece), the film "RougeCut" and "My GirlFriend is anAgent". He also appeared in several TV dramas, including "FireWorks" in which he played one of two employees of cosmetics firms seeking revenge on their former partners, "9 days
+
+Top Documents:
+
+1.  (Score: 0.5268)
+   "Kang Chol-hwan"
+Kang Chol-hwan Kang Chol-hwan (born September 18, 1968) is a North Korean defector and author. As a child, he was imprisoned in the Yodok concentration camp for 10 years. After his re…
+
+2.  (Score: 0.4748)
+   "Kang Ji-hwan"
+Kang Ji-hwan Kang Ji-hwan (born Jo Tae-gyu on March 20, 1977) is a South Korean actor. He began his career in musical theatre, and has since starred in television dramas such as ""Be St…
+
+3.  (Score: 0.4724)
+   "Kang Min-hyuk"
+Kang Min-hyuk Kang Min-hyuk (; born on June 28, 1991) is a South Korean musician, singer-songwriter, and actor. He is the drummer of South Korean rock band CNBLUE. Kang became a member…
+
+4.  (Score: 0.4712)
+   "Kang Ji-hwan"
+his 2006 dramas ""Fireworks"", about two cosmetics firm employees who plot revenge against their exes (opposite Han Chae-young), and ""90 Days, Time to Love"", about a terminally ill ma…
+
+5.  (Score: 0.4676)
+   "Kang Ji-young"
+Kang Ji-young Kang Ji-young (born January 18, 1994), also known as Jiyoung or JY, is a South Korean actress and singer based in Japan. She is a former member of the South Korean girl g…
