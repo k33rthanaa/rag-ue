@@ -1,17 +1,26 @@
-# Core ML libraries
+## Core ML libraries
 torch
 transformers>=4.44
 accelerate>=0.33
 huggingface_hub>=0.23
+sentencepiece
 
-# Embedding index
+## Quantization / large-model support
+bitsandbytes
+
+## Embedding index (CPU build by default)
 faiss-cpu
 
-# Utilities
+## Utilities
 tqdm
 numpy
 pyyaml
 tabulate
+python-dotenv
+requests
 
-# Optional but recommended for gzip/json reading stability
-ujson
+## SAFE / long-form factuality (used in SAFE scripts)
+TruthTorchLM
+
+## Plotting (for analysis scripts)
+matplotlib
