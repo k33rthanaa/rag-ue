@@ -17,7 +17,7 @@ The system uses **Contriever** for retrieval, **Qwen2.5-7B-Instruct** for genera
 
 ---
 
-## 📋 Requirements
+## Requirements
 
 - **Python**: 3.10 recommended (3.8+ should work).
 - **GPU (recommended)**:
@@ -87,7 +87,7 @@ RAG-Uncertainty-Estimator/
 
 ---
 
-## ⚙️ Key configuration (`configs/default.yaml`)
+## Key configuration (`configs/default.yaml`)
 
 ### Models
 
@@ -112,7 +112,7 @@ RAG-Uncertainty-Estimator/
 
 ---
 
-## 🚀 End-to-end workflow: RAG + SAFE + UE
+## End-to-end workflow: RAG + SAFE + UE
 
 ### 1. Download dataset
 
