@@ -5,9 +5,9 @@ The system uses **Contriever** for retrieval, **Qwen2.5-7B-Instruct** for genera
 
 ---
 
-## 🎯 What this repo gives you
+## What this repo gives you
 
-- **Large-scale retrieval**: build sharded FAISS indices over corpora like `wiki-18`.
+- **Large-scale retrieval**: build sharded FAISS indices over corpora like `wiki-18`, then merge them into a single **merged index** for fast downstream retrieval.
 - **RAG answering**: generate answers with Qwen (local) or API-based models.
 - **SAFE scoring**: label answers with factual correctness scores.
 - **Uncertainty Estimation**:
@@ -25,7 +25,7 @@ The system uses **Contriever** for retrieval, **Qwen2.5-7B-Instruct** for genera
   - CPU-only is supported but much slower for generation and UE.
 - **Disk**:
   - Dataset (e.g., `wiki-18.jsonl.gz`).
-  - Sharded FAISS indices under `outputs/`.
+  - Sharded FAISS indices under `outputs/` and a merged index under `outputs/merged/`.
 
 Install dependencies:
 
@@ -76,6 +76,9 @@ RAG-Uncertainty-Estimator/
     shard_0000/            # FAISS index + metadata per shard
     shard_0001/
     ...
+    merged/                # Merged FAISS index + merged metadata (recommended for all downstream tasks)
+      merged_index.index
+      merged_metadata.jsonl.gz
     rag_answers_*.jsonl    # RAG answers (with qid/query/answer)
     safe_scores_*.jsonl    # SAFE scores (with qid/safe_score)
     ue_scores_*.jsonl      # Per-query UE outputs
@@ -150,20 +153,37 @@ python scripts/query_index.py --shard_id 0 --top_k 5
 
 ---
 
-### 3. Run RAG answering
+### 3. Merge shards into a single merged index (recommended)
+
+Once you have built all shard folders, merge them into a single index + metadata file:
+
+```bash
+python scripts/merge_indices.py \
+  --output_root outputs \
+  --total_shards 11 \
+  --merged_dir outputs/merged
+```
+
+This produces:
+- `outputs/merged/merged_index.index`
+- `outputs/merged/merged_metadata.jsonl.gz`
+
+From this point onward, **all downstream retrieval in this project uses the merged index** (faster and simpler than querying each shard).
+
+---
+
+### 4. Run RAG answering (uses merged index)
 
 You can either:
 
 - **Use local Qwen** (via `rag_query.py` / `rag_query_local.py`), or  
 - **Use an API model** (e.g. Qwen API) via `rag_query_api.py`.
 
-For batch answering over many queries (recommended for UE runs):
+For batch answering over many queries (recommended for UE runs), retrieval is done from the merged index and the top documents are passed to the generator:
 
 ```bash
 python scripts/batch_rag.py \
-  --config configs/default.yaml \
-  --input_queries path/to/queries.jsonl \
-  --output_path outputs/rag_answers_...jsonl
+  --config configs/default.yaml
 ```
 
 Your answers file must contain at least:
@@ -175,7 +195,7 @@ This is the file you will feed into SAFE and UE.
 
 ---
 
-### 4. SAFE scoring (factual correctness labels)
+### 5. SAFE scoring (factual correctness labels)
 
 There are two SAFE front-ends:
 
@@ -206,7 +226,7 @@ python scripts/merge_safe_labels.py \
 
 ---
 
-### 5. Uncertainty Estimation 
+### 6. Uncertainty Estimation (uses merged index for re-retrieval)
 
 The main UE driver is `scripts/eval_ue_phase2.py`.
 
@@ -224,7 +244,7 @@ What it does:
 - For each shared `qid`:
   - **White-box UE**: computes average negative log-likelihood of the answer under the LM, conditioned on the question.
   - **Black-box UE**:
-    - Re-retrieves documents for the query using all FAISS shards.
+    - Re-retrieves documents for the query using the merged FAISS index.
     - Computes MARS-style faithfulness using a RoBERTa MNLI model.
     - Defines `ue_black = 1 - faithfulness`.
 - Accumulates per-query records and global correlation stats.
@@ -245,7 +265,7 @@ You can inspect `ue_correlation_summary.json` directly to see how well uncertain
 
 ---
 
-## 🔧 Script reference (quick)
+## Script reference (quick)
 
 - **`scripts/utils.py`**:
   - `load_config` – YAML config loader.
@@ -269,7 +289,7 @@ You can inspect `ue_correlation_summary.json` directly to see how well uncertain
 
 ---
 
-## 🐛 Troubleshooting notes
+## Troubleshooting notes
 
 - **Slow runs / long UE time**:
   - UE is expensive: it runs LM NLL + RoBERTa MNLI + multi-shard retrieval per query.
@@ -285,7 +305,7 @@ You can inspect `ue_correlation_summary.json` directly to see how well uncertain
 
 ---
 
-## 📝 Notes
+## Notes
 
 - Shards are independent; you can build and query them in any order.
 - Metadata files store full document text for RAG, so they can be large.
