@@ -43,7 +43,7 @@ pip install faiss-gpu
 
 ---
 
-## 📁 Project structure (simplified)
+## Project structure
 
 ```text
 RAG-Uncertainty-Estimator/
