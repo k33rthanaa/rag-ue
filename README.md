@@ -1,4 +1,4 @@
-## RAG-Uncertainty-Estimator
+## Retrieval-Augmented Generation (RAG) with Uncertainty Estimation (UE)
 
 End-to-end pipeline for Retrieval-Augmented Generation (RAG) with Uncertainty Estimation (UE).  
 The system uses **Contriever** for retrieval, **Qwen2.5-7B-Instruct** for generation, and **SAFE + MARS-style UE** to study how uncertainty correlates with factual correctness.
